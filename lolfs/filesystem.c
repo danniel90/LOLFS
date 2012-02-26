@@ -66,12 +66,9 @@ void liberarBloque(unsigned int bloque)
 /*--------------------------------------------------------Filesystem----------------------------------------------------------*/
 
 int searchFile(struct directorio *dir, char *file_name){
-    //struct directorio dir;
-    //read_block(num_bloque, &dir);
-
     int identry;
     for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
-        struct entrada_directorio dirEntry = dir.directory_Entries[identry];
+        struct entrada_directorio dirEntry = dir->directory_Entries[identry];
 
         if (strcmp(file_name, dirEntry.nombre) == 0)
             return dirEntry.apuntador;
@@ -141,11 +138,11 @@ int setStat(struct stat* sb, struct directorio *entry)
     sb->st_nlink=1;
     sb->st_uid = entry->uid;
     sb->st_gid = entry->gid;
-    sb->st_size = 0;                                                           //TODO
-    sb->st_mtime=entry->mtime;
-    sb->st_atime = entry->mtime;
-    sb->st_ctime = entry->mtime;
-    sb->st_mode = entry->mode | (entry->isDir ? S_IFDIR : S_IFREG);
+    sb->st_size = 0;                     //TODO
+    sb->st_mtime=0;     //TODO: copiar fechas correctas de entry
+    sb->st_atime = 0;
+    sb->st_ctime = 0;
+    sb->st_mode = entry->mode | (entry->tipo_bloque ? S_IFDIR : S_IFREG);
     return 0;
 }
 
@@ -160,7 +157,7 @@ int setStat(struct stat* sb, struct directorio *entry)
 void* ondisk_init(struct fuse_conn_info *conn)
 {
     read_block(0, &buffer);
-    memcpy(&superBlock, buffer, sizeof(super_bloque));
+    memcpy(&superBlock, buffer, sizeof(struct super_bloque));
     return NULL;
 }
 
@@ -234,11 +231,13 @@ static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             continue;
         else {
             read_block(x,buffer);
-            setStat(&sb, &buffer);
+            setStat(&sb, buffer);
             name = dir.directory_Entries[x].nombre;
             filler(buf, name, &sb, 0);
         }
     }
+
+    return NULL;
 }
 
 /* create - create a new file
@@ -268,6 +267,8 @@ static int ondisk_mkdir(const char *path, mode_t mode)
 
     int bloque = getBlock(directoryname);
 
+    printf("Dir = %s\n BloqNum = %d\n", directoryname, bloque);
+
     if (bloque == -ENOENT)
         return -ENOENT;
 
@@ -276,8 +277,8 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     read_block(bloque, &dir);
 
     //dir permissions & file name validation
-    if ((dir.mode & S_IWUSR) == 0)
-        return -EACCES;
+    //if ((dir.mode & S_IWUSR) == 0)
+        //return -EACCES;
 
     if (searchFile(&dir, filename) != -ENOENT)
         return -EEXIST;
@@ -292,7 +293,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //directory entry creation
     struct entrada_directorio new_dirEntry;
 
-    new_dirEntry.nombre = filename;
+    memcpy(new_dirEntry.nombre, filename, strlen(filename));
     new_dirEntry.apuntador = new_bloque;
     new_dirEntry.tipo_bloque = DIRECTORIO;
 
@@ -316,7 +317,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     new_dir->fcreacion = 0;      //TODO get dates
     new_dir->fmodificacion = 0;
     new_dir->cantidad_elementos = 0;
-    memcpy(creador, "YO");      //TODO get username
+    memcpy(new_dir->creador, "YO", 3);      //TODO get username
 
     for (x = 0; x < CANT_DIR_ENTRIES; x++){
         new_dir->directory_Entries[x].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
@@ -386,6 +387,9 @@ static int ondisk_unlink(const char *path)
     //write container directory
     write_block(bloque, &dir);
 
+    //release file block
+    liberarBloque(ptrBlock);
+
     return NULL;
 }
 
@@ -429,6 +433,9 @@ static int ondisk_rmdir(const char *path)
 
     //write container directory
     write_block(bloque, &dir);
+
+    //release Directory block
+    liberarBloque(bloque);
 
     return NULL;
 }
