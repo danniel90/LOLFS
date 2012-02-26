@@ -99,7 +99,6 @@ int getBlock(const char *path){
     return bloque;
 }
 
-
 char *getFilename(const char *path){
     char *temp = NULL;
 
@@ -156,8 +155,12 @@ int setStat(struct stat* sb, struct directorio *entry)
  */
 void* ondisk_init(struct fuse_conn_info *conn)
 {
-    read_block(0, &buffer);
+    buffer = calloc(SIZE_BLOCK,1);
+    memcpy(&superBlock, buffer, SIZE_BLOCK);
+
+    read_block(0, buffer);
     memcpy(&superBlock, buffer, sizeof(struct super_bloque));
+
     return NULL;
 }
 
@@ -189,6 +192,7 @@ void* ondisk_init(struct fuse_conn_info *conn)
 static int ondisk_getattr(const char *path, struct stat *sb)
 {
     struct directorio dir;
+
     int i = getBlock(path);
     read_block(i, &dir);
 

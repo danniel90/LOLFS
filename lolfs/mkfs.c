@@ -25,40 +25,37 @@ int leer_bloque(int fd, int lba, void *buffer)
 
 unsigned long parsiarint(char *s)
 {
-    unsigned long valor= strtol(s,&s,0); /*convierte la parte inicial de la cadena nptr en un valor entero largo de acuerdo con la base dada */
-    if(toupper(*s)== 'G')
-    {
-        valor*=(1024*1024*1024);
-        if(valor%128==0)
-        {
-            descripcion='G';
+    unsigned long valor = strtol(s, &s, 0); /*convierte la parte inicial de la cadena nptr en un valor entero largo de acuerdo con la base dada */
+
+    if (toupper(*s) == 'G'){
+        valor *= (1024 * 1024 * 1024);
+        return valor;
+    }
+
+    if (toupper(*s) == 'M'){
+        valor *= (1024 * 1024);
+
+        if (valor % 128 == 0){
+            descripcion = 'M';
             return valor;
         }
     }
-    if(toupper(*s)=='M')
-    {
-        valor*=(1024*1024);
-        if(valor%128==0)
-        {
-            descripcion='M';
+
+    if (toupper(*s) == 'K'){
+        valor *= 1024;
+
+        if (valor % 128 == 0){
+            descripcion = 'K';
             return valor;
         }
     }
-    if(toupper(*s)=='K')
-    {
-        valor*=(1024);
-        if(valor%128==0)
-        {
-            descripcion='K';
-            return valor;
-        }
-    }
+
     return -1;
 }
 
 void mensaje()
 {
-    printf("uso: mkfs-turcios [--crear <tamano (g|m|k)>] <image-file>\n");
+    printf("uso: mkfs [--crear <tamano (g|m|k)>] <image-file>\n");
     exit(1);
 }
 
@@ -67,34 +64,34 @@ void mensaje()
     unsigned long total_bloques;
     unsigned long tmp;
     int r;
-    if(tipo=='G')
-    {
-        total_bloques=size*1024*1024*1024;
-        tmp=total_bloques/SIZE_BLOCK;
-        tmp=tmp/8;
-        total_bloques=tmp/SIZE_BLOCK;
-        r=total_bloques;
+
+    if (tipo == 'G'){
+        total_bloques = size * 1024 * 1024 * 1024;
+        tmp = total_bloques/SIZE_BLOCK;
+        tmp = tmp / 8;
+        total_bloques = tmp / SIZE_BLOCK;
+        r = total_bloques;
         return r;
     }
-    else if(tipo=='M')
-    {
-        total_bloques=size*1024*1024;
-        tmp=total_bloques/SIZE_BLOCK;
-        tmp=tmp/8;
-        total_bloques=tmp/SIZE_BLOCK;
-        r=total_bloques;
+    else if (tipo == 'M'){
+        total_bloques = size * 1024 * 1024;
+        tmp = total_bloques / SIZE_BLOCK;
+        tmp = tmp / 8;
+        total_bloques = tmp / SIZE_BLOCK;
+        r = total_bloques;
         return r;
     }
     else if(tipo =='K')
     {
-        total_bloques=size*1024;
-        tmp=total_bloques/SIZE_BLOCK;
-        tmp=tmp/8;
-        total_bloques=tmp/SIZE_BLOCK;
-        r=total_bloques;
+        total_bloques = size * 1024;
+        tmp = total_bloques / SIZE_BLOCK;
+        tmp = tmp / 8;
+        total_bloques = tmp / SIZE_BLOCK;
+        r = total_bloques;
         return r;
 
     }
+
     return -1;
 }
 
@@ -105,26 +102,29 @@ int main(int argc, char **argv)
     int c;
     int fd, numero_bloques;
     struct stat sb;
-    unsigned long size_disco=0;
-    void *buffer=calloc(SIZE_BLOCK,1);
+    unsigned long size_disco = 0;
+    void *buffer = calloc(SIZE_BLOCK, 1);
 
-    static struct option opciones[]={
-                                      {"crear",required_argument, NULL, 'c'},
-                                      {0,0,0,0}
-                                    };/*El Struct getgetopt.h*/
-
-    while((c=getopt_long_only(argc, argv, "", opciones, NULL)) !=-1)
-
-    switch(c)
+    static struct option opciones[] =
     {
-        case 'c': size_disco=parsiarint(optarg);
-            break;
-        default: printf("Erro opcion erronea");
+        {"crear", required_argument, NULL, 'c'},
+        {0, 0, 0, 0}
+    };/*El Struct getgetopt.h*/
+
+    while((c = getopt_long_only(argc, argv, "", opciones, NULL)) !=-1){
+        switch(c)
+        {
+            case 'c':   size_disco=parsiarint(optarg);
+                        break;
+            default:    printf("Erro opcion erronea");
+        }
     }
 
-    printf("Size_Disco es de: %d",size_disco);
-    if(size_disco==-1)
-        perror("Tamano no valido para formatiar el disco duro, tiene que ser un numero divisible entre 128\n"),exit(1);
+    printf("Size_Disco es de: %d", size_disco);
+    if(size_disco == -1){
+        perror("Tamano no valido para formatiar el disco duro, tiene que ser un numero divisible entre 128\n");
+        exit(1);
+    }
 
     if(optind >=argc)
     {

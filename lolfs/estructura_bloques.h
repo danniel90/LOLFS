@@ -7,6 +7,8 @@
 /* Estructura para el super bloque
    Basada en el examen de SO2*/
 
+
+#define CANT_PADDING (SIZE_BLOCK - 28) / 4
 struct super_bloque
 {
     int magic_number;
@@ -16,6 +18,7 @@ struct super_bloque
     int primerbloque_mapabits;
     int bloques_libres;
     int bloque_root;
+    int padding[CANT_PADDING];
 };
 
 struct entrada_directorio

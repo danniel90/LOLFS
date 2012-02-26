@@ -14,7 +14,7 @@
 
 #include "estructura_bloques.h"
 
-char buffer[SIZE_BLOCK];
+char *buffer;//[SIZE_BLOCK];
 struct super_bloque superBlock;
 
 #endif // FILESYSTEM_H
