@@ -66,34 +66,64 @@ void mensaje()
     int r;
 
     if (tipo == 'G'){
-        total_bloques = size * 1024 * 1024 * 1024;
-        tmp = total_bloques/SIZE_BLOCK;
+        //total_bloques = size * 1024 * 1024 * 1024;
+        tmp = size / SIZE_BLOCK;
         tmp = tmp / 8;
         total_bloques = tmp / SIZE_BLOCK;
         r = total_bloques;
         return r;
-    }
-    else if (tipo == 'M'){
-        total_bloques = size * 1024 * 1024;
-        tmp = total_bloques / SIZE_BLOCK;
+    } else if (tipo == 'M'){
+        //total_bloques = size * 1024 * 1024;
+        tmp = size / SIZE_BLOCK;
         tmp = tmp / 8;
         total_bloques = tmp / SIZE_BLOCK;
         r = total_bloques;
         return r;
-    }
-    else if(tipo =='K')
-    {
+    } else if(tipo =='K'){
         total_bloques = size * 1024;
         tmp = total_bloques / SIZE_BLOCK;
         tmp = tmp / 8;
         total_bloques = tmp / SIZE_BLOCK;
         r = total_bloques;
         return r;
-
     }
 
     return -1;
 }
+
+ unsigned int alocarBloque(int fd, struct super_bloque *superBlock)
+ {
+     unsigned int size_bloques = superBlock->size_bloques;
+     unsigned int inicio_bitmap = superBlock->primerbloque_mapabits;
+     printf("primer blq = %d\n", inicio_bitmap);
+     unsigned int size_bitmap = superBlock->sizebloques_mapabits;
+
+     unsigned int i;
+     unsigned char *buffer = (unsigned char*)calloc(size_bloques, 1);
+
+     for(i = inicio_bitmap; i < (inicio_bitmap + size_bitmap); i++){
+         leer_bloque(fd, i, buffer);
+
+         unsigned int j;
+         for(j = 0; j < SIZE_BLOCK; j++){
+             //printf("byte = %d\n", (unsigned int)buffer[j]);
+             if (buffer[j] != 0){
+                 int x;
+                 for(x = 0; x < 7; x++){
+                     if (buffer[j] & (1 << x)){
+                         buffer[j] &= ~(1 << x);
+                         printf("bit #%d\n", x);
+                         escribir_bloque(fd, i, buffer);
+
+                         return (i-inicio_bitmap) * (8 + size_bitmap) + (j * 8) + x;
+                     }
+                 }
+             }
+         }
+     }
+
+     return 0; // bloque 0 es utilizado por el super_bloque pro ende es imposible utilizarlo y es considerado cmomo error
+ }
 
 int main(int argc, char **argv)
 {
@@ -120,7 +150,7 @@ int main(int argc, char **argv)
         }
     }
 
-    printf("Size_Disco es de: %d", size_disco);
+    printf("Size_Disco es de: %lu", size_disco);
     if(size_disco == -1){
         perror("Tamano no valido para formatiar el disco duro, tiene que ser un numero divisible entre 128\n");
         exit(1);
@@ -135,48 +165,46 @@ int main(int argc, char **argv)
     /* Ver que tan grande es la imagen o crear una nueva */
     if(size_disco==0)
     {
-        if((fd=open(path,O_WRONLY,0777)<0 ||fstat(fd,&sb)< 0))/* O_WRONLY viene de fcntl.h  y el fstat() de stat.h*/
+        if((fd = open(path, O_WRONLY, 0777) < 0) ||
+        //if((fd = open(path, O_RDWR, 0777) < 0) ||
+           (fstat(fd, &sb) <  0))/* O_WRONLY viene de fcntl.h  y el fstat() de stat.h*/
         {
             perror("Error al a-------brir el archivo\n"),
             exit(1);
         }
-        numero_bloques=sb.st_size/SIZE_BLOCK;  /* Size of file, in bytes.*/
-    }
+        numero_bloques=sb.st_size / SIZE_BLOCK;  /* Size of file, in bytes.*/
+    } else{
+        numero_bloques = size_disco / SIZE_BLOCK;
 
-    else
-    {
-        numero_bloques=size_disco/SIZE_BLOCK;
-        if((fd=open(path,O_WRONLY|O_CREAT|O_TRUNC))<0)
-        {
+        if((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC)) < 0){
               perror("Error al crear el archivo"),exit(1);
         }
-        for(i=0;i<numero_bloques;i++)
-        {
-              if(write(fd,buffer,SIZE_BLOCK)<0)
-              {
-                    perror("Error al escribir al archivo"),exit(1);
-               }
+
+        for(i=0;i<numero_bloques;i++){
+            if(write(fd,buffer,SIZE_BLOCK)<0){
+                perror("Error al escribir al archivo"),exit(1);
+            }
         }
-               lseek(fd,0,SEEK_SET);
+        lseek(fd, 0, SEEK_SET);
      }
+
     printf("Entro\n");
      /* Escribir superbloque */
 
-    struct super_bloque *sp=buffer;
-    sp->magic_number=MAGIC;
-    sp->size_bloques=SIZE_BLOCK;
-    sp->total_bloques=numero_bloques;
-    sp->primerbloque_mapabits=1;
+    struct super_bloque *sp = buffer;
+    sp->magic_number = MAGIC;
+    sp->size_bloques = SIZE_BLOCK;
+    sp->total_bloques = numero_bloques;
+    sp->primerbloque_mapabits = 1;
 
-    int size_bloquesmapa=cantidad_bloques_bits(size_disco,descripcion);
-    sp->sizebloques_mapabits=size_bloquesmapa;
-    sp->bloque_root=size_bloquesmapa+1;
-    sp->bloques_libres=numero_bloques-size_bloquesmapa-2;
+    int size_bloquesmapa = cantidad_bloques_bits(size_disco, descripcion);
+    sp->sizebloques_mapabits = size_bloquesmapa;
+    sp->bloque_root = size_bloquesmapa + 1;
+    sp->bloques_libres = numero_bloques - size_bloquesmapa - 2;
 
-    escribir_bloque(fd,0,buffer);
+    escribir_bloque(fd, 0, buffer);
     printf("SE ESCRIBIO EL SUPER BLOQUE\n");
     printf("A ESCRIBIR EL MAPA DE BITS\n");
-
 
     /*MAPA DE BITS
      Escribir los Bloques que son necesarios para el mapa de bits          */
@@ -186,13 +214,13 @@ int main(int argc, char **argv)
 
     int j,k,cont=0;
     int escribirmapabits=1+1+size_bloquesmapa;//Cantidad de bits que voy a escribir en el mapa de bits
+    for(j=0;j<SIZE_BLOCK;j++)
+    {
+        arr[j]=255;
+    }
     for(i=1;i<i+size_bloquesmapa;i++)
     {
-        for(j=0;j<SIZE_BLOCK;j++)
-        {
-            arr[j]=255;
-        }
-
+        printf("%d\n",i);
         for(j=0;j<SIZE_BLOCK;j++)
         {
             if(arr[j]!=0)
@@ -208,46 +236,40 @@ int main(int argc, char **argv)
                         }
                     }
                     else
-                        break;
+                    {
+                        bitsmapa=&arr;
+                        escribir_bloque(fd,i,bitsmapa);
+                        goto continuacion;
+                    }
                 }
             }
 
         }
-        bitsmapa=&arr;
-        escribir_bloque(fd,i,bitsmapa);
     }
 
-
-
-    const int cantidad_estructdirectorios=SIZE_BLOCK/sizeof(struct directorio);
-    struct directorio *folder=buffer;
-
-
+    continuacion:
     printf("SE ESCRIBIO EL MAPA DE BITS\n");
-    printf("A ESCRIBIR EL DIRECTORIO ROOT\n");
 
-    folder->tipo_bloque=1;
-    memcpy(folder->creador,"Diego",10);
-    folder->uid=1000;
-    folder->gid=1;
-    folder->mode=2;
-    folder->fcreacion=10;
+    printf("A ESCRIBIR EL DIRECTORIO ROOT\n");
+    struct directorio *folder = buffer;
+    //memset(folder, 0, BLOCK_SIZE);
+
+    folder->tipo_bloque=DIRECTORIO;
+    memcpy(folder->creador,"yo",10);
+    folder->uid=0;
+    folder->gid=0;
+    folder->mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
+    folder->fcreacion= 0;
     folder->fmodificacion=11;
     folder->cantidad_elementos=0;
 
+    for (k = 0; k < CANT_DIR_ENTRIES; k++)
+        folder->directory_Entries[k].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
 
-    /*for(i=0;i<cantidad_estructdirectorios;i++)
-        folder[i].valid=0;*/
-
-    escribir_bloque(fd,1+size_bloquesmapa,buffer);
+    escribir_bloque(fd, 1 + size_bloquesmapa, folder);
     printf("SE ESCRIBIO EL BLOQUE DE DIRECROIOS\n");
 
     close(fd);
-
     return 0;
-
-
-
 }
-
 

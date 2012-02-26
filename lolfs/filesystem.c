@@ -20,25 +20,25 @@ extern int read_block(int lba, void *buf);
 
 unsigned int alocarBloque()
 {
-    unsigned int size_bloques = superBlock.size_bloques;
     unsigned int inicio_bitmap = superBlock.primerbloque_mapabits;
     unsigned int size_bitmap = superBlock.sizebloques_mapabits;
+
 
     unsigned int i;
     for(i = inicio_bitmap; i < (inicio_bitmap + size_bitmap); i++){
         read_block(i,buffer);
 
         unsigned int j;
-        for(j = 0; i < SIZE_BLOCK; j++){
+        for(j = 0; j < SIZE_BLOCK; j++){
             if (buffer[j] != 0){
 
-                unsigned x;
+                int x;
                 for(x = 0; x < 7; x++){
                     if (buffer[j] & (1 << x)){
                         buffer[j] &= ~(1 << x);
                         write_block(i, buffer);
 
-                        return  (i * size_bloques * 8) + (j * 8) + x;
+                        return (i-inicio_bitmap) * (8 + size_bitmap) + (j * 8) + x;//return  (i * size_bloques * 8) + (j * 8) + x;
                     }
                 }
             }
@@ -99,13 +99,21 @@ int getBlock(const char *path){
     return bloque;
 }
 
-char *getFilename(const char *path){
+char *getFilename(const char *path){    
+    if (strcmp(path, "/") == 0){
+            return NULL;
+    }
     char *temp = NULL;
 
     int x;
     for (x = strlen(path) - 2; x >= 0; x--){
         if (path[x] == '/'){
-            temp = path + x + 1;
+            temp = (char *) malloc(strlen(path) - x - 1);
+            memcpy(temp, path + x + 1, strlen(path) - x - 1);
+
+            if (temp[strlen(path) - x - 2] == '/')
+                temp[strlen(path) - x - 2] = '\0';
+
             break;
         }
     }
@@ -114,7 +122,10 @@ char *getFilename(const char *path){
 }
 
 char *getDirectory(const char *path){
-    char *temp = NULL;
+    if (strcmp(path, "/") == 0){
+            return "/";
+    }
+    char *temp = (char *) malloc(strlen(path));
 
     int x;
     for (x = strlen(path) - 2; x >= 0; x--){
@@ -130,21 +141,24 @@ char *getDirectory(const char *path){
 
 int setStat(struct stat* sb, struct directorio *entry)
 {
-    sb->st_dev=101;
+    sb->st_dev=0;
     sb->st_ino=0;
     sb->st_rdev=0;
     sb->st_blocks=0;
-    sb->st_nlink=1;
+    sb->st_nlink = 1;//entry->tipo_bloque == DIRECTORIO ? 2 : 1;
     sb->st_uid = entry->uid;
     sb->st_gid = entry->gid;
     sb->st_size = 0;                     //TODO
-    sb->st_mtime=0;     //TODO: copiar fechas correctas de entry
-    sb->st_atime = 0;
-    sb->st_ctime = 0;
-    sb->st_mode = entry->mode | (entry->tipo_bloque ? S_IFDIR : S_IFREG);
+    sb->st_mtime=entry->fmodificacion;     //TODO: copiar fechas correctas de entry
+    sb->st_atime = entry->fmodificacion;
+    sb->st_ctime = entry->fcreacion;
+    sb->st_mode = entry->mode | (entry->tipo_bloque == DIRECTORIO ? S_IFDIR : S_IFREG);
     return 0;
 }
 
+
+static const char *hello_str = "Hello World!\n";
+static const char *hello_path = "/hello";
 
 /*----------------------------------------------------------FUSE--------------------------------------------------------*/
 
@@ -191,14 +205,48 @@ void* ondisk_init(struct fuse_conn_info *conn)
  */
 static int ondisk_getattr(const char *path, struct stat *sb)
 {
-    struct directorio dir;
+   /* struct directorio dir;
 
     int i = getBlock(path);
     read_block(i, &dir);
 
     setStat(sb, &dir);
 
-    return i;
+    return NULL;
+
+    char *filename = getFilename(path);
+
+    int res = 0;
+    memset(sb, 0, sizeof(struct stat));
+
+    if (strcmp(path, "/") == 0) {
+        sb->st_mode = S_IFDIR | 0777;
+        sb->st_nlink = 2;
+    } else if(strcmp(path, filename) == 0) {
+        sb->st_mode = S_IFREG | 0777;
+        sb->st_nlink = 1;
+        sb->st_size = strlen(filename);
+    } else
+        res = -ENOENT;
+
+    return res;*/
+
+    int res = 0;
+    memset(sb, 0, sizeof(struct stat));
+
+    if(strcmp(path, "/") == 0) {
+        sb->st_mode = S_IFDIR | 0755;
+        sb->st_nlink = 2;
+    }
+    else if(strcmp(path, hello_path) == 0) {
+        sb->st_mode = S_IFREG | 0444;
+        sb->st_nlink = 1;
+        sb->st_size = strlen(hello_str);
+    }
+    else
+        res = -ENOENT;
+
+    return res;
 }
 
 /* readdir - get directory contents
@@ -214,20 +262,28 @@ static int ondisk_getattr(const char *path, struct stat *sb)
 static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                        off_t offset, struct fuse_file_info *fi)
 {
-    char *name;
+    /*char *name;
     struct stat sb;
 
     struct directorio dir;
     unsigned int bloque = getBlock(path);
 
-    if (bloque >= 0){
-        read_block(bloque, &dir);
-        setStat(&sb, &dir);
-    } else
+    if (bloque < 0){
+        printf("readdir DUMP: %s\n", path);
         return -ENOTDIR;
+    }
 
-    if (dir.tipo_bloque != DIRECTORIO)
+    read_block(bloque, &dir);
+
+    if (dir.tipo_bloque != DIRECTORIO){
+        printf("readdir DUMP: %s\n", path);
         return -ENOTDIR;
+    }
+
+    if ((dir.mode & S_IRUSR) == 0){
+        printf("readdir DUMP: %s\n", path);
+        return -EACCES;
+    }
 
     int x;
     for (x = 0; x < CANT_DIR_ENTRIES; x++){
@@ -240,8 +296,19 @@ static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             filler(buf, name, &sb, 0);
         }
     }
+    return NULL;*/
 
-    return NULL;
+    (void) offset;
+    (void) fi;
+
+    if(strcmp(path, "/") != 0)
+        return -ENOENT;
+
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
+    filler(buf, hello_path + 1, NULL, 0);
+
+    return 0;
 }
 
 /* create - create a new file
@@ -271,25 +338,33 @@ static int ondisk_mkdir(const char *path, mode_t mode)
 
     int bloque = getBlock(directoryname);
 
-    printf("Dir = %s\n BloqNum = %d\n", directoryname, bloque);
+    printf("PATH = %s\n Parent Dir = %s\n BloqNum = %d\n File = %s\n", path, directoryname, bloque, filename);
 
-    if (bloque == -ENOENT)
+    if (bloque == -ENOENT){
+        printf("mkdir DUMP: %s\n", directoryname);
         return -ENOENT;
+    }
 
     //variable declaration/init
     struct directorio dir;
     read_block(bloque, &dir);
 
     //dir permissions & file name validation
-    //if ((dir.mode & S_IWUSR) == 0)
-        //return -EACCES;
+    if ((dir.mode & S_IWUSR) == 0){
+        printf("mkdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
+        return -EACCES;
+    }
 
-    if (searchFile(&dir, filename) != -ENOENT)
+    if (searchFile(&dir, filename) != -ENOENT){
+        printf("mkdir DUMP: %s ya existe en %s!!\n", filename, directoryname);
         return -EEXIST;
+    }
 
     //crear entrada nueva
-    if (dir.cantidad_elementos == 63)
+    if (dir.cantidad_elementos == 63){
+        printf("mkdir DUMP: Directorio %s lleno!!\n", directoryname);
         return -ENOTEMPTY;//ENOTEMPTY ("directory not empty = FULL") si no hay espacio para mas dirEntries
+    }
 
     //new directory creation/init
     unsigned int new_bloque = alocarBloque();
@@ -297,7 +372,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //directory entry creation
     struct entrada_directorio new_dirEntry;
 
-    memcpy(new_dirEntry.nombre, filename, strlen(filename));
+    memcpy(new_dirEntry.nombre, filename, strlen(filename) + 1);
     new_dirEntry.apuntador = new_bloque;
     new_dirEntry.tipo_bloque = DIRECTORIO;
 
@@ -325,7 +400,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
 
     for (x = 0; x < CANT_DIR_ENTRIES; x++){
         new_dir->directory_Entries[x].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
-    }   
+    }
 
     //writing
     write_block(bloque, &dir);

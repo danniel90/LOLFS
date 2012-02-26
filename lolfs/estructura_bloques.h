@@ -30,8 +30,8 @@ struct entrada_directorio
 
 
 #define LIBRE               0
-#define ARCHIVO             0100000
-#define DIRECTORIO          0040000
+#define ARCHIVO             1
+#define DIRECTORIO          2
 #define CANT_DIR_ENTRIES    (SIZE_BLOCK - 64) / 64
 
 struct directorio
