@@ -26,6 +26,7 @@ ${TARGET2}: ${OBJS2}
 
 ${CREATEDISK}:
 	>>$@
+	./mkfs --crear 128m $@
 
 clean::
 	rm -f *.o *~ *.img ${TARGET} ${TARGET2}

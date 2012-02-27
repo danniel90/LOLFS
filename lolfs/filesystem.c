@@ -65,67 +65,82 @@ void liberarBloque(unsigned int bloque)
 
 /*--------------------------------------------------------Filesystem----------------------------------------------------------*/
 
-int searchFile(struct directorio *dir, char *file_name){
-    int identry;
-    for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
-        struct entrada_directorio dirEntry = dir->directory_Entries[identry];
 
-        if (strcmp(file_name, dirEntry.nombre) == 0)
-            return dirEntry.apuntador;
-    }
+ void setPath(const char *path)
+ {
+    printf("setPath dbg: entra\n");
+    lolfs.index = 0;
+    char copia[strlen(path) + 1];
+    strcpy(copia, path);
 
-    return -ENOENT;
-}
+    char *dir_name = strtok(copia, "/");
 
-int getBlock(const char *path){
-    char path2[sizeof(path)];
-    strcpy(path2,path);
-
-    int bloque = superBlock.bloque_root;
-
-    char *subPath = strtok(path2, "/");
-    while (subPath != NULL){
-        struct directorio dir;      //para que strtok no genere SIGSEGV!!! WTF!
-        read_block(bloque, &dir);
-
-        bloque = searchFile(&dir, subPath);
-
-        if (bloque == -ENOENT)
-            return -ENOENT;
-
-        subPath = strtok(NULL, "/");
-    }
-
-    return bloque;
-}
-
-char *getFilename(const char *path){    
-    if (strcmp(path, "/") == 0){
-            return NULL;
-    }
-    char *temp = NULL;
-
-    int x;
-    for (x = strlen(path) - 2; x >= 0; x--){
-        if (path[x] == '/'){
-            temp = (char *) malloc(strlen(path) - x - 1);
-            memcpy(temp, path + x + 1, strlen(path) - x - 1);
-
-            if (temp[strlen(path) - x - 2] == '/')
-                temp[strlen(path) - x - 2] = '\0';
-
-            break;
+    while (dir_name != NULL){
+        if (strcmp(dir_name, "..") == 0) {
+            lolfs.index--;
+        } else {
+            if (strcmp(dir_name, ".") != 0) {
+                strcpy(lolfs.path[lolfs.index], dir_name);
+                lolfs.index++;
+            }
         }
+        dir_name = strtok(NULL, "/");
     }
-
-    return temp;
+    printf("setPath dbg: sale\n");
 }
 
-char *getDirectory(const char *path){
-    if (strcmp(path, "/") == 0){
-            return "/";
-    }
-    char *temp = (char *) malloc(strlen(path));
+ int searchFile(struct directorio *dir, char *file_name)
+ {
+     int identry;
+     for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
+         struct entrada_directorio dirEntry = dir->directory_Entries[identry];
+
+         if (strcmp(file_name, dirEntry.nombre) == 0)
+             return dirEntry.apuntador;
+     }
+
+     return -ENOENT;
+ }
+
+ int getBlock(const char *path)
+ {
+     printf("getBlock dbg: entra\n");
+     setPath(path);
+
+     int bloque = superBlock.bloque_root;
+
+     if (lolfs.index == 0){
+         printf("getBlock dbg: sale - bloque = %d\n", bloque);
+         return bloque;
+     }
+
+     read_block(bloque, &buffer);
+
+     int x;
+     for (x = 0; x < lolfs.index - 1; x++) {
+         bloque = searchFile((void *)buffer, lolfs.path[x]);
+
+         if (bloque == -ENOENT)
+             return -ENOENT;
+
+         read_block(bloque, &buffer);
+     }
+
+     printf("getBlock dbg: sale - bloque = %d\n", bloque);
+     return bloque;
+ }
+
+char *getFilename()
+{
+    printf("getFilename dbg: saliendo\n");
+    return lolfs.path[lolfs.index - 1];
+}
+
+char *getDirectory(const char *path)
+{
+    printf("getDirectory dbg: entrando\n");
+    char *temp = malloc(strlen(path) + 1);
+    strcpy(temp, path);
 
     int x;
     for (x = strlen(path) - 2; x >= 0; x--){
@@ -136,29 +151,41 @@ char *getDirectory(const char *path){
         }
     }
 
+    printf("getDirectory dbg: saliendo\n");
     return temp;
+    /*
+    printf("getDirectory dbg: entrando\n");
+    char dirname[2];
+
+    int x;
+    for (x = 0; x < lolfs.index - 1; x++){
+        strncat(dirname, lolfs.path[x], sizeof(lolfs.path[x]));
+    }
+
+    printf("getDirectory dbg: saliendo\n");
+    return dirname;*/
 }
 
-int setStat(struct stat* sb, struct directorio *entry)
+int setDirStat(struct stat* sb, struct directorio *entry)
 {
-    sb->st_dev=0;
-    sb->st_ino=0;
-    sb->st_rdev=0;
-    sb->st_blocks=0;
-    sb->st_nlink = 1;//entry->tipo_bloque == DIRECTORIO ? 2 : 1;
-    sb->st_uid = entry->uid;
-    sb->st_gid = entry->gid;
-    sb->st_size = 0;                     //TODO
-    sb->st_mtime=entry->fmodificacion;     //TODO: copiar fechas correctas de entry
-    sb->st_atime = entry->fmodificacion;
-    sb->st_ctime = entry->fcreacion;
-    sb->st_mode = entry->mode | (entry->tipo_bloque == DIRECTORIO ? S_IFDIR : S_IFREG);
+    /*sb->st_dev      = 0;
+    sb->st_ino      = 0;
+    sb->st_rdev     = 0;
+    sb->st_blocks   = 0;*/
+    sb->st_nlink    = 2;
+    sb->st_uid      = entry->uid;
+    sb->st_gid      = entry->gid;
+    sb->st_size     = 0;                        //calculado dinamicamente
+    sb->st_mtime    = entry->fmodificacion;     //TODO: copiar fechas correctas de entry
+    sb->st_atime    = entry->fmodificacion;
+    sb->st_ctime    = entry->fcreacion;
+    sb->st_mode     = entry->mode;// | S_IFDIR;
     return 0;
 }
 
 
-static const char *hello_str = "Hello World!\n";
-static const char *hello_path = "/hello";
+//static const char *hello_str = "Hello World!\n";
+//static const char *hello_path = "/hello";
 
 /*----------------------------------------------------------FUSE--------------------------------------------------------*/
 
@@ -167,15 +194,12 @@ static const char *hello_path = "/hello";
  * any global variables you need. You don't need to worry about the
  * argument or the return value.
  */
-void* ondisk_init(struct fuse_conn_info *conn)
+void *ondisk_init(struct fuse_conn_info *conn)
 {
-    buffer = calloc(SIZE_BLOCK,1);
-    memcpy(&superBlock, buffer, SIZE_BLOCK);
-
-    read_block(0, buffer);
+    read_block(0, &buffer);
     memcpy(&superBlock, buffer, sizeof(struct super_bloque));
 
-    return NULL;
+    return 0;
 }
 
 /* Note on path translation errors:
@@ -203,50 +227,22 @@ void* ondisk_init(struct fuse_conn_info *conn)
  *    st_atime, st_ctime - set to same value as st_mtime
  * errors - path translation, ENOENT
  */
-static int ondisk_getattr(const char *path, struct stat *sb)
+static int ondisk_getattr(const char *path, struct stat *stbuf)
 {
-   /* struct directorio dir;
+    struct directorio dir;
+    memset(&dir, 0, sizeof(struct directorio));
 
     int i = getBlock(path);
+
+    if (i < 0)
+        return i;
+
+    printf("dbg: int i = %d\n", i);
     read_block(i, &dir);
 
-    setStat(sb, &dir);
+    setDirStat(stbuf, &dir); //TODO: set for files!!!
 
-    return NULL;
-
-    char *filename = getFilename(path);
-
-    int res = 0;
-    memset(sb, 0, sizeof(struct stat));
-
-    if (strcmp(path, "/") == 0) {
-        sb->st_mode = S_IFDIR | 0777;
-        sb->st_nlink = 2;
-    } else if(strcmp(path, filename) == 0) {
-        sb->st_mode = S_IFREG | 0777;
-        sb->st_nlink = 1;
-        sb->st_size = strlen(filename);
-    } else
-        res = -ENOENT;
-
-    return res;*/
-
-    int res = 0;
-    memset(sb, 0, sizeof(struct stat));
-
-    if(strcmp(path, "/") == 0) {
-        sb->st_mode = S_IFDIR | 0755;
-        sb->st_nlink = 2;
-    }
-    else if(strcmp(path, hello_path) == 0) {
-        sb->st_mode = S_IFREG | 0444;
-        sb->st_nlink = 1;
-        sb->st_size = strlen(hello_str);
-    }
-    else
-        res = -ENOENT;
-
-    return res;
+    return 0;
 }
 
 /* readdir - get directory contents
@@ -262,52 +258,43 @@ static int ondisk_getattr(const char *path, struct stat *sb)
 static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                        off_t offset, struct fuse_file_info *fi)
 {
-    /*char *name;
+    char *name;
     struct stat sb;
-
+    memset(&sb, 0, sizeof(struct stat));
     struct directorio dir;
-    unsigned int bloque = getBlock(path);
 
-    if (bloque < 0){
-        printf("readdir DUMP: %s\n", path);
-        return -ENOTDIR;
+    int bloque = getBlock(path);
+
+    if (bloque <= 0) {
+        printf("readdir DUMP: %s error al obtener entrada!!\n", path);
+        return bloque;
     }
+
+    printf("readdir dbg: bloque = %d\n", bloque);
 
     read_block(bloque, &dir);
 
-    if (dir.tipo_bloque != DIRECTORIO){
-        printf("readdir DUMP: %s\n", path);
+    if (dir.tipo_bloque != DIRECTORIO) {
+        printf("readdir DUMP: %s no es directorio!! es %d\n", path, dir.tipo_bloque);
         return -ENOTDIR;
     }
 
-    if ((dir.mode & S_IRUSR) == 0){
-        printf("readdir DUMP: %s\n", path);
+    if ((dir.mode & S_IRUSR) == 0) {
+        printf("readdir DUMP: no tiene permisos para leer %s!!\n", path);
         return -EACCES;
     }
 
     int x;
-    for (x = 0; x < CANT_DIR_ENTRIES; x++){
+    for (x = 0; x < CANT_DIR_ENTRIES; x++) {
         if (dir.directory_Entries[x].tipo_bloque == LIBRE)
             continue;
         else {
             read_block(x,buffer);
-            setStat(&sb, buffer);
+            setDirStat(&sb, (void *)buffer);
             name = dir.directory_Entries[x].nombre;
             filler(buf, name, &sb, 0);
         }
     }
-    return NULL;*/
-
-    (void) offset;
-    (void) fi;
-
-    if(strcmp(path, "/") != 0)
-        return -ENOENT;
-
-    filler(buf, ".", NULL, 0);
-    filler(buf, "..", NULL, 0);
-    filler(buf, hello_path + 1, NULL, 0);
-
     return 0;
 }
 
@@ -333,17 +320,17 @@ static int ondisk_create(const char *path, mode_t mode,
  */
 static int ondisk_mkdir(const char *path, mode_t mode)
 {
-    char *filename = getFilename(path);
+    int bloque = getBlock(path);
+
+    if (bloque < 0) {
+        printf("mkdir DUMP: %s\n", path);
+        return bloque;
+    }
+
+    char *filename = getFilename();
     char *directoryname = getDirectory(path);
 
-    int bloque = getBlock(directoryname);
-
-    printf("PATH = %s\n Parent Dir = %s\n BloqNum = %d\n File = %s\n", path, directoryname, bloque, filename);
-
-    if (bloque == -ENOENT){
-        printf("mkdir DUMP: %s\n", directoryname);
-        return -ENOENT;
-    }
+    printf("mkdir dbg: PATH = %s\n Parent Dir = %s\n BloqNum = %d\n File = %s\n", path, directoryname, bloque, filename);
 
     //variable declaration/init
     struct directorio dir;
@@ -363,11 +350,12 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //crear entrada nueva
     if (dir.cantidad_elementos == 63){
         printf("mkdir DUMP: Directorio %s lleno!!\n", directoryname);
-        return -ENOTEMPTY;//ENOTEMPTY ("directory not empty = FULL") si no hay espacio para mas dirEntries
+        return -ENOTEMPTY;
     }
 
     //new directory creation/init
     unsigned int new_bloque = alocarBloque();
+    printf("mkdir dbg: new_bloque = %d\n", new_bloque);
 
     //directory entry creation
     struct entrada_directorio new_dirEntry;
@@ -389,18 +377,23 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //directory creation
     struct directorio *new_dir = (struct directorio *) calloc(CANT_DIR_ENTRIES, sizeof(struct entrada_directorio));
 
-    new_dir->tipo_bloque = DIRECTORIO;
-    new_dir->uid = 0;
-    new_dir->gid = 0;
-    new_dir->mode = dir.mode;
-    new_dir->fcreacion = 0;      //TODO get dates
-    new_dir->fmodificacion = 0;
-    new_dir->cantidad_elementos = 0;
-    memcpy(new_dir->creador, "YO", 3);      //TODO get username
+    time_t tiempo = time(NULL);
 
-    for (x = 0; x < CANT_DIR_ENTRIES; x++){
+    struct passwd *pws;
+    pws = getpwuid(dir.uid);
+
+    new_dir->tipo_bloque = DIRECTORIO;
+    memcpy(new_dir->creador, pws->pw_name, strlen(pws->pw_name) + 1);
+    new_dir->uid = dir.uid;
+    new_dir->gid = dir.gid;
+    new_dir->mode = dir.mode;//S_IFDIR | mode;
+    printf("mkdir dbg: new_bloque mode = %d\n", new_dir->mode);
+    new_dir->fcreacion = tiempo;
+    new_dir->fmodificacion = tiempo;
+    new_dir->cantidad_elementos = 0;
+
+    for (x = 0; x < CANT_DIR_ENTRIES; x++)
         new_dir->directory_Entries[x].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
-    }
 
     //writing
     write_block(bloque, &dir);
@@ -408,7 +401,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //writing directory
     write_block(new_bloque, new_dir);
 
-    return NULL;
+    return 0;
 }
 
 /* unlink - delete a file
@@ -443,9 +436,9 @@ static int ondisk_unlink(const char *path)
         if (strcmp(dir.directory_Entries[x].nombre, filename) == 0){
 
             switch (dir.directory_Entries[x].tipo_bloque){
-                case LIBRE:         return NULL;//nada mas que hacer
+                case LIBRE:         return 0;//nada mas que hacer
                 case DIRECTORIO:    return -EISDIR;//Es directrori! Deberia ser con rmdir!!
-                case ARCHIVO:       dir.directory_Entries[x].tipo_bloque == LIBRE;
+                case ARCHIVO:       dir.directory_Entries[x].tipo_bloque = LIBRE;
                                     ptrBlock = dir.directory_Entries[x].apuntador;
                                     break;
                 default:            return -EOPNOTSUPP;
@@ -469,7 +462,7 @@ static int ondisk_unlink(const char *path)
     //release file block
     liberarBloque(ptrBlock);
 
-    return NULL;
+    return 0;
 }
 
 /* rmdir - remove a directory
@@ -480,43 +473,48 @@ static int ondisk_unlink(const char *path)
 static int ondisk_rmdir(const char *path)
 {   
     //TODO: no estoy seguro si es necesario hacerlo recursivo..??
-    char *filename = getFilename(path);
-    char *directory = getDirectory(path);
+    printf("rmdir dbg: path = %s\n", path);
+    int bloque = getBlock(path);
 
-    int bloque = getBlock(directory);
+    if (bloque < 0)
+        return bloque;
 
-    if (bloque == -ENOENT)
-        return -ENOENT;
+    printf("rmdir dbg: bloque = %s\n", bloque);
+
+    char *filename = getFilename();
+    char *directoryname = getDirectory(path);
+
+    printf("rmdir dbg: filename = %s | directory = %s \n", filename, directoryname);
 
     //variable declaration/init
     struct directorio dir;
     read_block(bloque, &dir);
 
     //dir permissions & file name validation
-    if ((dir.mode & S_IWUSR) == 0)
+    if ((dir.mode & S_IWUSR) == 0) {
+        printf("rmdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
         return -EACCES;
-
-    if (searchFile(&dir, filename) == -ENOENT)
-        return -ENOENT;
-
-    //delete directory, modify element_count & delete dirEntry
-    int x;
-    for (x = 0; x < CANT_DIR_ENTRIES; x++){
-        if (strcmp(dir.directory_Entries[x].nombre, filename) == 0){
-            dir.directory_Entries[x].tipo_bloque == LIBRE;
-            break;
-        }
     }
 
+    int dirEntryIdx =  searchFile(&dir, filename);
+    if (dirEntryIdx == -ENOENT) {
+        printf("rmdir DUMP: %s no existe en %s!!\n", filename, directoryname);
+        return -ENOENT;
+    }
+
+    //delete directory, modify element_count & delete dirEntry
+    dir.directory_Entries[dirEntryIdx].tipo_bloque = LIBRE;
     dir.cantidad_elementos--;
 
     //write container directory
+    printf("rmdir dbg: excribiendo %s\n", directoryname);
     write_block(bloque, &dir);
 
     //release Directory block
+    printf("rmdir dbg: liberando bloques de %s\n", filename);
     liberarBloque(bloque);
 
-    return NULL;
+    return 0;
 }
 
 /* rename - rename a file or directory

@@ -12,9 +12,21 @@
 #include <stdio.h>
 #include <errno.h>
 
+#include <pwd.h>
+#include <sys/types.h> //para obtener uid y username
+
+#include <time.h>
+
 #include "estructura_bloques.h"
 
-char *buffer;//[SIZE_BLOCK];
+struct lolfs_path
+{
+    char path[16][44];//**path;
+    int index;
+};
+
+char buffer[SIZE_BLOCK];
 struct super_bloque superBlock;
+struct lolfs_path lolfs;
 
 #endif // FILESYSTEM_H
