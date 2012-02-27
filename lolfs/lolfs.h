@@ -1,5 +1,5 @@
-#ifndef FILESYSTEM_H
-#define FILESYSTEM_H
+#ifndef LOLFS_H
+#define LOLFS_H
 
 #define FUSE_USE_VERSION 27
 
@@ -29,4 +29,4 @@ char buffer[SIZE_BLOCK];
 struct super_bloque superBlock;
 struct lolfs_path lolfs;
 
-#endif // FILESYSTEM_H
+#endif // LOLFS_H

@@ -20,8 +20,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <fuse.h>
-#include "filesystem.h"
-//#include "filesystem.c"
+#include "lolfs.h"
 
 /*********** DO NOT MODIFY THIS FILE *************/
 

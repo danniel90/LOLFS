@@ -1,15 +1,13 @@
-FILESYSTEM	:= filesystem.c
-
-SRCS    := ${FILESYSTEM} misc.c
+SRCS    := lolfs.c misc.c
 SRCS2	:= mkfs.c
 OBJS    := ${SRCS:.c=.o} 
-OBJS2    := ${SRCS2:.c=.o} 
+OBJS2   := ${SRCS2:.c=.o} 
 
-CFLAGS = -D_FILE_OFFSET_BITS=64 -I/usr/include/fuse -pthread -g -Wall
-LDFLAGS = -L/lib -lfuse -ldl
-TARGET = filesystem
-TARGET2 = mkfs
-CREATEDISK = disk.img
+CFLAGS		= -D_FILE_OFFSET_BITS=64 -I/usr/include/fuse -pthread -g -Wall
+LDFLAGS		= -L/lib -lfuse -ldl
+TARGET		= lolfs
+TARGET2		= mkfs
+CREATEDISK	= disk.img
 
 .PHONY: all clean
 

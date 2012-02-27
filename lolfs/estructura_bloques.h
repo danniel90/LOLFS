@@ -21,9 +21,10 @@ struct super_bloque
     int padding[CANT_PADDING];
 };
 
+#define MAX_NAME 58
 struct entrada_directorio
 {
-    char            nombre [58];
+    char            nombre [MAX_NAME];
     unsigned short  tipo_bloque;
     unsigned int    apuntador;
 };

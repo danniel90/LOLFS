@@ -1,4 +1,4 @@
-#include "filesystem.h"
+#include "lolfs.h"
 
 
 /* write_block, read_block:
@@ -104,13 +104,13 @@ void liberarBloque(unsigned int bloque)
 
  int getBlock(const char *path)
  {
-     printf("getBlock dbg: entra\n");
+     //printf("getBlock dbg: entra\n");
      setPath(path);
 
      int bloque = superBlock.bloque_root;
 
      if (lolfs.index == 0){
-         printf("getBlock dbg: sale - bloque = %d\n", bloque);
+         //printf("getBlock dbg: sale - bloque = %d\n", bloque);
          return bloque;
      }
 
@@ -126,19 +126,27 @@ void liberarBloque(unsigned int bloque)
          read_block(bloque, &buffer);
      }
 
-     printf("getBlock dbg: sale - bloque = %d\n", bloque);
+     //printf("getBlock dbg: sale - bloque = %d\n", bloque);
      return bloque;
  }
 
 char *getFilename()
 {
-    printf("getFilename dbg: saliendo\n");
+    //printf("getFilename dbg: entrando\n");
+    if ((lolfs.index - 1) < 0)
+        return "";
+
+
+    //printf("getFilename dbg: saliendo\n");
     return lolfs.path[lolfs.index - 1];
 }
 
 char *getDirectory(const char *path)
 {
-    printf("getDirectory dbg: entrando\n");
+    //printf("getDirectory dbg: entrando\n");
+    if ((lolfs.index - 1) == 0)
+        return "/";
+
     char *temp = malloc(strlen(path) + 1);
     strcpy(temp, path);
 
@@ -151,19 +159,8 @@ char *getDirectory(const char *path)
         }
     }
 
-    printf("getDirectory dbg: saliendo\n");
-    return temp;
-    /*
-    printf("getDirectory dbg: entrando\n");
-    char dirname[2];
-
-    int x;
-    for (x = 0; x < lolfs.index - 1; x++){
-        strncat(dirname, lolfs.path[x], sizeof(lolfs.path[x]));
-    }
-
-    printf("getDirectory dbg: saliendo\n");
-    return dirname;*/
+    //printf("getDirectory dbg: saliendo\n");
+    return temp;    
 }
 
 int setDirStat(struct stat* sb, struct directorio *entry)
@@ -175,11 +172,11 @@ int setDirStat(struct stat* sb, struct directorio *entry)
     sb->st_nlink    = 2;
     sb->st_uid      = entry->uid;
     sb->st_gid      = entry->gid;
-    sb->st_size     = 0;                        //calculado dinamicamente
-    sb->st_mtime    = entry->fmodificacion;     //TODO: copiar fechas correctas de entry
+    sb->st_size     = SIZE_BLOCK;
+    sb->st_mtime    = entry->fmodificacion;
     sb->st_atime    = entry->fmodificacion;
     sb->st_ctime    = entry->fcreacion;
-    sb->st_mode     = entry->mode;// | S_IFDIR;
+    sb->st_mode     = entry->mode;
     return 0;
 }
 
@@ -401,6 +398,10 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //writing directory
     write_block(new_bloque, new_dir);
 
+    printf("mkdir dbg: escribiendo super bloque \n");
+    superBlock.bloques_libres--;
+    write_block(0, &superBlock);
+
     return 0;
 }
 
@@ -473,46 +474,51 @@ static int ondisk_unlink(const char *path)
 static int ondisk_rmdir(const char *path)
 {   
     //TODO: no estoy seguro si es necesario hacerlo recursivo..??
-    printf("rmdir dbg: path = %s\n", path);
+    //printf("rmdir dbg: path = %s\n", path);
     int bloque = getBlock(path);
 
     if (bloque < 0)
         return bloque;
 
-    printf("rmdir dbg: bloque = %s\n", bloque);
+    //printf("rmdir dbg: bloque = %d\n", bloque);
 
     char *filename = getFilename();
     char *directoryname = getDirectory(path);
 
-    printf("rmdir dbg: filename = %s | directory = %s \n", filename, directoryname);
+    //printf("rmdir dbg: filename = %s | directory = %s \n", filename, directoryname);
 
-    //variable declaration/init
     struct directorio dir;
     read_block(bloque, &dir);
 
-    //dir permissions & file name validation
     if ((dir.mode & S_IWUSR) == 0) {
         printf("rmdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
         return -EACCES;
     }
 
-    int dirEntryIdx =  searchFile(&dir, filename);
-    if (dirEntryIdx == -ENOENT) {
+    int bloque_liberar =  searchFile(&dir, filename);
+    if (bloque_liberar == -ENOENT) {
         printf("rmdir DUMP: %s no existe en %s!!\n", filename, directoryname);
         return -ENOENT;
     }
 
-    //delete directory, modify element_count & delete dirEntry
-    dir.directory_Entries[dirEntryIdx].tipo_bloque = LIBRE;
+    int identry;
+    for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
+        if (strcmp(filename, dir.directory_Entries[identry].nombre) == 0) {
+            dir.directory_Entries[identry].tipo_bloque = LIBRE;
+            break;
+        }
+    }
     dir.cantidad_elementos--;
 
-    //write container directory
     printf("rmdir dbg: excribiendo %s\n", directoryname);
     write_block(bloque, &dir);
 
-    //release Directory block
     printf("rmdir dbg: liberando bloques de %s\n", filename);
-    liberarBloque(bloque);
+    liberarBloque(bloque_liberar);
+
+    printf("rmdir dbg: escribiendo super bloque \n");
+    superBlock.bloques_libres++;
+    write_block(0, &superBlock);
 
     return 0;
 }
@@ -611,7 +617,13 @@ static int ondisk_statfs(const char *path, struct statvfs *st)
      * it's OK to calculate this dynamically on the rare occasions
      * when this function is called.
      */
-    return -EOPNOTSUPP;
+    st->f_bsize = SIZE_BLOCK;
+    st->f_blocks = superBlock.total_bloques - (superBlock.sizebloques_mapabits - superBlock.primerbloque_mapabits) - 1;
+    st->f_bfree = superBlock.bloques_libres;
+    st->f_bavail = st->f_bfree;
+    st->f_namemax = MAX_NAME;
+
+    return 0;
 }
 
 /* operations vector. Please don't rename it, as the skeleton code in
