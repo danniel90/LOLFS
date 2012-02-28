@@ -37,14 +37,15 @@ struct entrada_directorio
 
 struct directorio
 {
-    unsigned short  tipo_bloque;         //2
+    unsigned short  tipo_bloque;        //2
     unsigned short  uid;                //2
     unsigned short  gid;                //2
     unsigned short  mode;               //2
+    unsigned int    facceso;            //4
     unsigned int    fcreacion;          //4
     unsigned int    fmodificacion;      //4
     unsigned int    cantidad_elementos; //4
-    char            creador[44];        //44
+    char            creador[40];        //40
     struct entrada_directorio directory_Entries[CANT_DIR_ENTRIES];
 };
 
@@ -52,14 +53,15 @@ struct directorio
 
 struct file_control_block
 {
-    unsigned short  tipo_bloque;         //2
+    unsigned short  tipo_bloque;        //2
     unsigned short  uid;                //2
     unsigned short  gid;                //2
     unsigned short  mode;               //2
+    unsigned int    facceso;            //4
     unsigned int    fcreacion;          //4
     unsigned int    fmodificacion;      //4
     unsigned int    lenght;             //4     //tamaño en bytes
-    char            creador[44];        //44
+    char            creador[40];        //40
     unsigned int    bloques[CANT_BLOQUES_DATA];
 };
 

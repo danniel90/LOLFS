@@ -263,6 +263,7 @@ int main(int argc, char **argv)
     folder->mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO; printf("Permisos para / = %d\n", S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO);
     folder->fcreacion = tiempo; printf("fcreacion = %s\n", ctime(&tiempo));
     folder->fmodificacion = tiempo;
+    folder->facceso = tiempo;
     folder->cantidad_elementos = 0;
 
     for (k = 0; k < CANT_DIR_ENTRIES; k++)
