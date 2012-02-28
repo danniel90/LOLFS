@@ -340,20 +340,20 @@ struct {
     int   (*f)(char *args[]);
     char  *help;
 } cmds[] = {
-    {"cd", 1, do_cd, "cd <path> - change directory"},
-    {"pwd", 0, do_pwd, "pwd - display current directory"},
-    {"ls", 0, do_ls0, "ls - list files in current directory"},
-    {"ls", 1, do_ls1, "ls <dir> - list specified directory"},
+    {"cd", 1, do_cd, "cd <path> - change directorio"},
+    {"pwd", 0, do_pwd, "pwd - display current directorio"},
+    {"ls", 0, do_ls0, "ls - list files in current directorio"},
+    {"ls", 1, do_ls1, "ls <dir> - list specified directorio"},
     {"ls-l", 0, do_lsdashl0, "ls-l - display detailed file listing"},
     {"ls-l", 1, do_lsdashl1, "ls-l <file> - display detailed file info"},
     {"chmod", 2, do_chmod, "chmod <mode> <file> - change permissions"},
     {"rename", 2, do_rename, "rename <oldname> <newname> - rename file"},
-    {"mkdir", 1, do_mkdir, "mkdir <dir> - create directory"},
-    {"rmdir", 1, do_rmdir, "rmdir <dir> - remove directory"},
+    {"mkdir", 1, do_mkdir, "mkdir <dir> - create directorio"},
+    {"rmdir", 1, do_rmdir, "rmdir <dir> - remove directorio"},
     {"rm", 1, do_rm, "rm <file> - remove file"},
     {"put", 2, do_put, "put <outside> <inside> - copy a file from localdir into file system"},
     {"put", 1, do_put1, "put <name> - ditto, but keep the same name"},
-    {"get", 2, do_get, "get <inside> <outside> - retrieve a file from file system to local directory"},
+    {"get", 2, do_get, "get <inside> <outside> - retrieve a file from file system to local directorio"},
     {"get", 1, do_get1, "get <name> - ditto, but keep the same name"},
     {"print", 1, do_print, "print <file> - retrieve and print a file"},
     {"statfs", 0, do_statfs, "statfs - print file system info"},
@@ -422,7 +422,7 @@ char *strmode(char *buf, int mode)
     return retval;
 }
 
-/* fd2path - translate a file descriptor into a directory
+/* fd2path - translate a file descriptor into a directorio
  *  path. hideously Linux-specific.
  */
 char *fd2path(int fd, char *buf, int len)
@@ -490,7 +490,7 @@ int checkdir(const char *path)
  *   ./homework [options] <what> <where>
  *
  *     <what> - name of the image file to mount
- *     <where> - directory to mount it on
+ *     <where> - directorio to mount it on
  */
 #define KEY_CMDLINE 1234
 static int hw4_opt_proc(void *data, const char *arg, int key,
@@ -506,7 +506,7 @@ static int hw4_opt_proc(void *data, const char *arg, int key,
     }
     return 0;
     }
-    /* The second non-option argument is the mount directory. Check it
+    /* The second non-option argument is the mount directorio. Check it
      * for NFS permissions issues and bail if it's not OK.
      */
     else if (key == FUSE_OPT_KEY_NONOPT) {

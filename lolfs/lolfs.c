@@ -10,7 +10,7 @@
  *  0-1023, block 1 is bytes 1024-2047, etc.)
  *
  *  Make sure you pass a valid block address (i.e. less than the
- *  'fs_size' field in the superblock)
+ *  'fs_size' field in the superBlock)
  */
 extern int write_block(int lba, void *buf);
 extern int read_block(int lba, void *buf);
@@ -133,7 +133,7 @@ void liberarBloque(unsigned int bloque)
 char *getFilename(const char *path)
 {
     if (strcmp(path, "/") == 0)
-        return NULL;
+        return "";
 
     char *temp = NULL;
 
@@ -144,12 +144,10 @@ char *getFilename(const char *path)
                 continue;
 
             temp = (char *) malloc(strlen(path) - x - 1);
-            memcpy(temp, path + x + 1, strlen(path) - x - 1);
+            memcpy(temp, path + x + 1, strlen(path) - x);
 
             if (temp[strlen(temp) - 1] == '/')
                 temp[strlen(temp) - 1] = '\0';
-            else
-                temp[strlen(temp)] = '\0';
 
             break;
         }
@@ -157,7 +155,7 @@ char *getFilename(const char *path)
     return temp;
 }
 
-char *getDirectory(const char *path)
+char *getdirectorio(const char *path)
 {
     if (strcmp(path, "/") == 0)
             return "/";
@@ -220,13 +218,13 @@ void *ondisk_init(struct fuse_conn_info *conn)
 /* Note on path translation errors:
  * In addition to the method-specific errors listed below, almost
  * every method can return one of the following errors if it fails to
- * locate a file or directory corresponding to a specified path.
+ * locate a file or directorio corresponding to a specified path.
  *
  * ENOENT - a component of the path is not present.
  * ENOTDIR - an intermediate component of the path (e.g. 'b' in
- *           /a/b/c) is not a directory
+ *           /a/b/c) is not a directorio
  * EACCES  - the user lacks *execute* permission (yes, execute) for an
- *           intermediate directory in the path.
+ *           intermediate directorio in the path.
  *
  * In our case we assume a single user, and so it is sufficient to
  * use this test:    if ((mode & S_IXUSR) == 0)
@@ -235,7 +233,7 @@ void *ondisk_init(struct fuse_conn_info *conn)
  * See 'man path_resolution' for more information.
  */
 
-/* getattr - get file or directory attributes. For a description of
+/* getattr - get file or directorio attributes. For a description of
  *  the fields in 'struct stat', see 'man lstat'.
  * Note - fields not provided in CS7600fs are:
  *    st_nlink - always set to 1
@@ -261,14 +259,14 @@ static int ondisk_getattr(const char *path, struct stat *stbuf)
 
 }
 
-/* readdir - get directory contents
- * for each entry in the directory, invoke:
+/* readdir - get directorio contents
+ * for each entry in the directorio, invoke:
  *     filler(buf, <name>, <statbuf>, 0)
  * where <statbuf> is a struct stat, just like in getattr.
  * Errors - path resolution, EACCES, ENOTDIR, ENOENT
  *
  * EACCES is returned if the user lacks *read* permission to the
- * directory - i.e.:     if ((mode & S_IRUSR) == 0)
+ * directorio - i.e.:     if ((mode & S_IRUSR) == 0)
  *                           return -EACCES;
  */
 static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -319,10 +317,10 @@ static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
  * Errors - path resolution, EACCES, EEXIST
  *
  * EACCES is returned if the user does not have write permission to
- * the enclosing directory:
+ * the enclosing directorio:
  *       if ((mode & S_IWUSR) == 0)
  *           return -EACCES;
- * If a file or directory of this name already exists, return -EEXIST.
+ * If a file or directorio of this name already exists, return -EEXIST.
  */
 static int ondisk_create(const char *path, mode_t mode,
                          struct fuse_file_info *fi)
@@ -330,7 +328,7 @@ static int ondisk_create(const char *path, mode_t mode,
     return -EOPNOTSUPP;
 }
 
-/* mkdir - create a directory with the given mode.
+/* mkdir - create a directorio with the given mode.
  * Errors - path resolution, EACCES, EEXIST
  * Conditions for EACCES and EEXIST are the same as for create.
  */
@@ -344,9 +342,9 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     }
 
     char *filename = getFilename(path);
-    char *directoryname = getDirectory(path);
+    char *directorioname = getdirectorio(path);
 
-    printf("\t mkdir dbg: PATH = %s | Parent Dir = %s | BloqNum = %d | File = %s\n", path, directoryname, bloque, filename);
+    printf("\t mkdir dbg: PATH = %s | Parent Dir = %s | BloqNum = %d | File = %s\n", path, directorioname, bloque, filename);
 
     //variable declaration/init
     struct directorio dir;
@@ -354,26 +352,26 @@ static int ondisk_mkdir(const char *path, mode_t mode)
 
     //dir permissions & file name validation
     if ((dir.mode & S_IWUSR) == 0){
-        printf("\t mkdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
+        printf("\t mkdir DUMP: Usuario no tiene write permissions en %s!!\n", directorioname);
         return -EACCES;
     }
 
     if (searchFile(&dir, filename) != -ENOENT){
-        printf("\t mkdir DUMP: %s ya existe en %s!!\n", filename, directoryname);
+        printf("\t mkdir DUMP: %s ya existe en %s!!\n", filename, directorioname);
         return -EEXIST;
     }
 
     //crear entrada nueva
     if (dir.cantidad_elementos == 63){
-        printf("\t mkdir DUMP: Directorio %s lleno!!\n", directoryname);
+        printf("\t mkdir DUMP: directorio %s lleno!!\n", directorioname);
         return -ENOTEMPTY;
     }
 
-    //new directory creation/init
+    //new directorio creation/init
     unsigned int new_bloque = alocarBloque();
     printf("\t mkdir dbg: new_bloque = %d\n", new_bloque);
 
-    //directory entry creation
+    //directorio entry creation
     struct entrada_directorio new_dirEntry;
 
     memcpy(new_dirEntry.nombre, filename, strlen(filename) + 1);
@@ -390,7 +388,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
         }
     }
 
-    //directory creation
+    //directorio creation
     struct directorio *new_dir = (struct directorio *) calloc(CANT_DIR_ENTRIES, sizeof(struct entrada_directorio));
 
     time_t tiempo = time(NULL);
@@ -414,7 +412,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     //writing
     write_block(bloque, &dir);
 
-    //writing directory
+    //writing directorio
     write_block(new_bloque, new_dir);
 
     printf("\t mkdir dbg: escribiendo super bloque \n");
@@ -427,7 +425,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
 /* unlink - delete a file
  *  Errors - path resolution, EACCES, ENOENT, EISDIR
  * Requires user *write* permission to the containing
- *  directory. (permissions on the file itself are ignored)
+ *  directorio. (permissions on the file itself are ignored)
  */
 static int ondisk_unlink(const char *path)
 {
@@ -440,21 +438,21 @@ static int ondisk_unlink(const char *path)
     printf("\t unlink dbg: bloque = %d\n", bloque);
 
     char *filename = getFilename(path);
-    char *directoryname = getDirectory(path);
+    char *directorioname = getdirectorio(path);
 
-    printf("\t unlink dbg: filename = %s | directory = %s \n", filename, directoryname);
+    printf("\t unlink dbg: filename = %s | directorio = %s \n", filename, directorioname);
 
     struct directorio dir;
     read_block(bloque, &dir);
 
     if ((dir.mode & S_IWUSR) == 0) {
-        printf("\t unlink DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
+        printf("\t unlink DUMP: Usuario no tiene write permissions en %s!!\n", directorioname);
         return -EACCES;
     }
 
     int bloque_liberar =  searchFile(&dir, filename);
     if (bloque_liberar == -ENOENT) {
-        printf("\t unlink DUMP: %s no existe en %s!!\n", filename, directoryname);
+        printf("\t unlink DUMP: %s no existe en %s!!\n", filename, directorioname);
         return -ENOENT;
     }
 
@@ -467,7 +465,7 @@ static int ondisk_unlink(const char *path)
     }
     dir.cantidad_elementos--;
 
-    printf("\t unlink dbg: excribiendo %s\n", directoryname);
+    printf("\t unlink dbg: excribiendo %s\n", directorioname);
     write_block(bloque, &dir);
 
 
@@ -489,9 +487,9 @@ static int ondisk_unlink(const char *path)
 
     //---------------------------------------------
     /*char *filename = getFilename(path);
-    char *directory = getDirectory(path);
+    char *directorio = getdirectorio(path);
 
-    int bloque = getBlock(directory);
+    int bloque = getBlock(directorio);
 
     if (bloque == -ENOENT)
         return -ENOENT;
@@ -507,14 +505,14 @@ static int ondisk_unlink(const char *path)
     if (searchFile(&dir, filename) == -ENOENT)
         return -ENOENT;
 
-    //delete file or directory, modify element_count & delete dirEntry
+    //delete file or directorio, modify element_count & delete dirEntry
     int x, ptrBlock = 0;
     for (x = 0; x < CANT_DIR_ENTRIES; x++){
         if (strcmp(dir.directory_Entries[x].nombre, filename) == 0){
 
             switch (dir.directory_Entries[x].tipo_bloque){
                 case LIBRE:         return 0;//nada mas que hacer
-                case DIRECTORIO:    return -EISDIR;//Es directrori! Deberia ser con rmdir!!
+                case directorio:    return -EISDIR;//Es directrori! Deberia ser con rmdir!!
                 case ARCHIVO:       dir.directory_Entries[x].tipo_bloque = LIBRE;
                                     ptrBlock = dir.directory_Entries[x].apuntador;
                                     break;
@@ -533,7 +531,7 @@ static int ondisk_unlink(const char *path)
     fcb.lenght = 0;
     write_block(bloque, &fcb);
 
-    //write container directory
+    //write container directorio
     write_block(bloque, &dir);
 
     //release file block
@@ -542,10 +540,10 @@ static int ondisk_unlink(const char *path)
     return 0;*/
 }
 
-/* rmdir - remove a directory
+/* rmdir - remove a directorio
  *  Errors - path resolution, EACCES, ENOENT, ENOTDIR, ENOTEMPTY
  * Requires user *write* permission to the containing
- *  directory. (permissions on the directory itself are ignored)
+ *  directorio. (permissions on the directorio itself are ignored)
  */
 static int ondisk_rmdir(const char *path)
 {   
@@ -559,21 +557,21 @@ static int ondisk_rmdir(const char *path)
     printf("\t rmdir dbg: bloque = %d\n", bloque);
 
     char *filename = getFilename(path);
-    char *directoryname = getDirectory(path);
+    char *directorioname = getdirectorio(path);
 
-    printf("\t rmdir dbg: filename = %s | directory = %s \n", filename, directoryname);
+    printf("\t rmdir dbg: filename = %s | directorio = %s \n", filename, directorioname);
 
     struct directorio dir;
     read_block(bloque, &dir);
 
     if ((dir.mode & S_IWUSR) == 0) {
-        printf("\t rmdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
+        printf("\t rmdir DUMP: Usuario no tiene write permissions en %s!!\n", directorioname);
         return -EACCES;
     }
 
     int bloque_liberar =  searchFile(&dir, filename);
     if (bloque_liberar == -ENOENT) {
-        printf("\t rmdir DUMP: %s no existe en %s!!\n", filename, directoryname);
+        printf("\t rmdir DUMP: %s no existe en %s!!\n", filename, directorioname);
         return -ENOENT;
     }
 
@@ -586,7 +584,7 @@ static int ondisk_rmdir(const char *path)
     }
     dir.cantidad_elementos--;
 
-    printf("\t rmdir dbg: excribiendo %s\n", directoryname);
+    printf("\t rmdir dbg: excribiendo %s\n", directorioname);
     write_block(bloque, &dir);
 
     printf("\t rmdir dbg: liberando bloque de %s\n", filename);
@@ -599,18 +597,18 @@ static int ondisk_rmdir(const char *path)
     return 0;
 }
 
-/* rename - rename a file or directory
+/* rename - rename a file or directorio
  * Errors - path resolution, ENOENT, EACCES, EINVAL, EEXIST
  *
  * ENOENT - source does not exist
  * EEXIST - destination already exists
- * EACCES - no write permission to directory. Permissions
- * EINVAL - source and destination are not in the same directory
+ * EACCES - no write permission to directorio. Permissions
+ * EINVAL - source and destination are not in the same directorio
  *
  * Note that this is a simplified version of the UNIX rename
  * functionality - see 'man 2 rename' for full semantics. In
  * particular, the full version can move across directories, replace a
- * destination file, and replace an empty directory with a full one.
+ * destination file, and replace an empty directorio with a full one.
  */
 static int ondisk_rename(const char *src_path, const char *dst_path)
 {
@@ -628,13 +626,13 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
     }
 
     char *filename_src = getFilename(src_path);
-    char *directoryname_src = getDirectory(src_path);
+    char *directorioname_src = getdirectorio(src_path);
 
     char *filename_dst = getFilename(dst_path);
-    char *directoryname_dst = getDirectory(dst_path);
+    char *directorioname_dst = getdirectorio(dst_path);
 
     printf("\t rename dbg: SRC_PATH = %s | DST_PATH = %s | SRC_Parent Dir = %s | DST_Parent Dir = %s | BloqNum = %d | SRC_File = %s | DST_File = %s\n",
-                           src_path, dst_path, directoryname_src, directoryname_dst, bloque, filename_src, filename_dst);
+                           src_path, dst_path, directorioname_src, directorioname_dst, bloque, filename_src, filename_dst);
 
     //variable declaration/init
     struct directorio dir;
@@ -642,12 +640,12 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
 
     //dir permissions & file name validation
     if ((dir.mode & S_IWUSR) == 0){
-        printf("\t rename DUMP: Usuario no tiene write permissions en %s!!\n", directoryname_src);
+        printf("\t rename DUMP: Usuario no tiene write permissions en %s!!\n", directorioname_src);
         return -EACCES;
     }
 
     if (searchFile(&dir, filename_dst) != -ENOENT){
-        printf("\t rename DUMP: %s ya existe en %s!!\n", filename_dst, directoryname_src);
+        printf("\t rename DUMP: %s ya existe en %s!!\n", filename_dst, directorioname_src);
         return -EEXIST;
     }
 
@@ -660,13 +658,11 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
     }
 
 
-    printf("\t rename dbg: writing %s block\n", directoryname_src);
+    printf("\t rename dbg: writing %s block\n", directorioname_src);
     write_block(bloque, &dir);
 
-    printf("\t rename dbg: %s renamed in %s\n", filename_dst, directoryname_src);
+    printf("\t rename dbg: %s renamed in %s\n", filename_dst, directorioname_src);
     return 0;
-
-    //return -EOPNOTSUPP;
 }
 
 /* chmod - change file permissions
@@ -675,7 +671,7 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
  *
  * Errors - path resolution, ENOENT.
  *
- * Note that no write permissions to the file/directory or containing
+ * Note that no write permissions to the file/directorio or containing
  * are needed - if you can resolve the path, then you can make the
  * change. (normally EACCES is returned if the invoking user does not
  * own the file)
@@ -737,7 +733,7 @@ static int ondisk_statfs(const char *path, struct statvfs *st)
 {
     /* needs to return the following fields (set others to zero):
      *   f_bsize = BLOCK_SIZE
-     *   f_blocks = total image - (superblock + FAT)
+     *   f_blocks = total image - (superBlock + FAT)
      *   f_bfree = f_blocks - blocks used
      *   f_bavail = f_bfree
      *   f_namelen = <whatever your max namelength is>

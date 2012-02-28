@@ -1,4 +1,5 @@
 #define _XOPEN_SOURCE 500  //ESTO ES NECESARIO PARA EL PWRITE Y PREAD
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -24,13 +25,13 @@ int leer_bloque(int fd, int lba, void *buffer)
     return pread(fd, buffer, SIZE_BLOCK, lba*SIZE_BLOCK);// funcion para leer son para linux
 }
 
-#include <getopt.h> /*Este include es para parsiar argumentos de la consola */
+#include <getopt.h>
 
-unsigned long parsiarint(char *s)
+unsigned long getSize(char *s)
 {
     unsigned long valor = strtol(s, &s, 0); /*convierte la parte inicial de la cadena nptr en un valor entero largo de acuerdo con la base dada */
 
-    if (toupper(*s) == 'G'){
+    if (toupper(*s) == 'G') {
         valor *= (1024 * 1024 * 1024);
         return valor;
     }
@@ -109,7 +110,6 @@ void mensaje()
 
          unsigned int j;
          for(j = 0; j < SIZE_BLOCK; j++){
-             //printf("byte = %d\n", (unsigned int)buffer[j]);
              if (buffer[j] != 0){
                  int x;
                  for(x = 0; x < 7; x++){
@@ -130,69 +130,62 @@ void mensaje()
 
 int main(int argc, char **argv)
 {
-    char *path;
-    int i;
-    int c;
-    int fd, numero_bloques;
-    struct stat sb;
-    unsigned long size_disco = 0;
-    void *buffer = calloc(SIZE_BLOCK, 1);
-
     static struct option opciones[] =
     {
         {"crear", required_argument, NULL, 'c'},
         {0, 0, 0, 0}
-    };/*El Struct getgetopt.h*/
+    };/*Struct getgetopt.h*/
 
-    while((c = getopt_long_only(argc, argv, "", opciones, NULL)) !=-1){
-        switch(c)
-        {
-            case 'c':   size_disco=parsiarint(optarg);
+    int c;
+    unsigned long size_disco = 0;
+
+    while ((c = getopt_long_only(argc, argv, "", opciones, NULL)) != -1) {
+        switch(c) {
+            case 'c':   size_disco = getSize(optarg);
                         break;
-            default:    printf("Erro opcion erronea");
+            default:    printf("Opcion erronea!!");
         }
     }
 
-    printf("Size_Disco es de: %lu", size_disco);
-    if(size_disco == -1){
-        perror("Tamano no valido para formatiar el disco duro, tiene que ser un numero divisible entre 128\n");
+    printf("Size del disco es de: %lu\n", size_disco);
+    if (size_disco == -1) {
+        perror("Tamano invalido para formatear, numero debe ser multiplo de 128\n");
         exit(1);
     }
 
-    if(optind >=argc)
-    {
+    if (optind >= argc) {
         mensaje();
     }
-    path=argv[optind];
+    char *path = argv[optind];
 
-    /* Ver que tan grande es la imagen o crear una nueva */
-    if(size_disco==0)
-    {
-        if((fd = open(path, O_WRONLY, 0777) < 0) ||
-        //if((fd = open(path, O_RDWR, 0777) < 0) ||
-           (fstat(fd, &sb) <  0))/* O_WRONLY viene de fcntl.h  y el fstat() de stat.h*/
-        {
-            perror("Error al a-------brir el archivo\n"),
+    int i, fd, numero_bloques;
+    struct stat sb;
+    void *buffer = calloc(SIZE_BLOCK, 1);
+
+    if (size_disco == 0) {
+        if ((fd = open(path, O_WRONLY, 0777) < 0) || (fstat(fd, &sb) <  0)) {
+            perror("Error al abrir el archivo!!\n"),
             exit(1);
         }
-        numero_bloques=sb.st_size / SIZE_BLOCK;  /* Size of file, in bytes.*/
-    } else{
+        numero_bloques = sb.st_size / SIZE_BLOCK;
+    } else {
         numero_bloques = size_disco / SIZE_BLOCK;
 
-        if((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC)) < 0){
-              perror("Error al crear el archivo"),exit(1);
+        if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC)) < 0) {
+              perror("Error al crear el archivo");
+              exit(1);
         }
 
-        for(i=0;i<numero_bloques;i++){
-            if(write(fd,buffer,SIZE_BLOCK)<0){
-                perror("Error al escribir al archivo"),exit(1);
+        for (i = 0; i < numero_bloques; i++) {
+            if (write(fd, buffer, SIZE_BLOCK) < 0) {
+                perror("Error al escribir al archivo!!\n");
+                exit(1);
             }
         }
         lseek(fd, 0, SEEK_SET);
      }
 
-    printf("Entro\n");
-     /* Escribir superbloque */
+    /* Escribir superbloque */
 
     struct super_bloque *sp = buffer;
     sp->magic_number = MAGIC;
@@ -206,56 +199,49 @@ int main(int argc, char **argv)
     sp->bloques_libres = numero_bloques - size_bloquesmapa - 2;
 
     escribir_bloque(fd, 0, buffer);
-    printf("SE ESCRIBIO EL SUPER BLOQUE\n");
-    printf("A ESCRIBIR EL MAPA DE BITS\n");
 
     /*MAPA DE BITS
      Escribir los Bloques que son necesarios para el mapa de bits          */
 
     unsigned char arr[SIZE_BLOCK];
-    void *bitsmapa=malloc(SIZE_BLOCK);
+    void *bitsmapa = malloc(SIZE_BLOCK);
 
-    int j,k,cont=0;
-    int escribirmapabits=1+1+size_bloquesmapa;//Cantidad de bits que voy a escribir en el mapa de bits
-    for(j=0;j<SIZE_BLOCK;j++)
-    {
-        arr[j]=255;
-    }
-    for(i=1;i<i+size_bloquesmapa;i++)
-    {
-        printf("%d\n",i);
-        for(j=0;j<SIZE_BLOCK;j++)
-        {
-            if(arr[j]!=0)
-            {
-                for(k=0;k<7;k++)
-                {
-                    if(cont<escribirmapabits)
-                    {
-                        if(arr[j]&(1<<k))
-                        {
+    int j, k, cont = 0;
+    int escribirmapabits = 1 + 1 + size_bloquesmapa;//Cantidad de bits que voy a escribir en el mapa de bits
+    for (j = 0; j < SIZE_BLOCK; j++)
+        arr[j] = 255;
+
+    for (i = 1; i < i + size_bloquesmapa; i++) {        
+        bool flag = false;
+        for (j = 0;j < SIZE_BLOCK; j++) {
+            if (arr[j] != 0) {
+                for (k = 0;k < 7; k++) {
+                    if (cont < escribirmapabits) {
+                        if(arr[j] & (1 << k)) {
                             arr[j]=arr[j]&~(1<<k);
                             cont++;
                         }
-                    }
-                    else
-                    {
-                        bitsmapa=&arr;
+                    } else {
+                        bitsmapa = &arr;
                         escribir_bloque(fd,i,bitsmapa);
-                        goto continuacion;
+
+                        flag = true;
                     }
+                    if (flag)
+                        break;
                 }
             }
-
+            if (flag)
+                break;
         }
+        if (flag)
+            break;
     }
 
-    continuacion:
-    printf("SE ESCRIBIO EL MAPA DE BITS\n");
 
-    printf("A ESCRIBIR EL DIRECTORIO ROOT\n");
+
     struct directorio *folder = buffer;
-    //memset(folder, 0, BLOCK_SIZE);
+
 
     uid_t uid;
     if ((uid = getuid()) == -1)
@@ -283,7 +269,6 @@ int main(int argc, char **argv)
         folder->directory_Entries[k].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
 
     escribir_bloque(fd, 1 + size_bloquesmapa, folder);
-    printf("SE ESCRIBIO EL BLOQUE DE DIRECTORIO ROOT\n");
 
     close(fd);
     return 0;
