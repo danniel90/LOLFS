@@ -48,7 +48,7 @@ struct directorio
     struct entrada_directorio directory_Entries[CANT_DIR_ENTRIES];
 };
 
-#define CANT_BLOQUES    (SIZE_BLOCK - 64)/sizeof(unsigned int)
+#define CANT_BLOQUES_DATA   (SIZE_BLOCK - 64) / sizeof(unsigned int)
 
 struct file_control_block
 {
@@ -60,7 +60,7 @@ struct file_control_block
     unsigned int    fmodificacion;      //4
     unsigned int    lenght;             //4     //tamaño en bytes
     char            creador[44];        //44
-    unsigned int    bloques[CANT_BLOQUES];
+    unsigned int    bloques[CANT_BLOQUES_DATA];
 };
 
 
