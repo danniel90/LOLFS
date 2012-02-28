@@ -181,18 +181,15 @@ char *getdirectorio(const char *path)
 
 int setDirStat(struct stat* sb, struct directorio *entry)
 {
-    /*sb->st_dev      = 0;
-    sb->st_ino      = 0;
-    sb->st_rdev     = 0;
-    sb->st_blocks   = 0;*/
+    sb->st_blocks   = 1;
     sb->st_nlink    = 2;
-    sb->st_uid      = entry->uid;
-    sb->st_gid      = entry->gid;
+    sb->st_uid      = entry->info.uid;
+    sb->st_gid      = entry->info.gid;
     sb->st_size     = SIZE_BLOCK;
-    sb->st_mtime    = entry->fmodificacion;
-    sb->st_atime    = entry->facceso;
-    sb->st_ctime    = entry->fcreacion;
-    sb->st_mode     = entry->mode;
+    sb->st_mtime    = entry->info.fmodificacion;
+    sb->st_atime    = entry->info.facceso;
+    sb->st_ctime    = entry->info.fcreacion;
+    sb->st_mode     = entry->info.mode;
     return 0;
 }
 
@@ -290,12 +287,12 @@ static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     read_block(bloque, &dir);
 
-    if (dir.tipo_bloque != DIRECTORIO) {
-        printf("\t readdir DUMP: %s no es directorio!! es %d\n", path, dir.tipo_bloque);
+    if (dir.info.tipo_bloque != DIRECTORIO) {
+        printf("\t readdir DUMP: %s no es directorio!! es %d\n", path, dir.info.tipo_bloque);
         return -ENOTDIR;
     }
 
-    if ((dir.mode & S_IRUSR) == 0) {
+    if ((dir.info.mode & S_IRUSR) == 0) {
         printf("\t readdir DUMP: no tiene permisos para leer %s!!\n", path);
         return -EACCES;
     }
@@ -355,7 +352,7 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     read_block(bloque, &dir);
 
     //dir permissions & file name validation
-    if ((dir.mode & S_IWUSR) == 0){
+    if ((dir.info.mode & S_IWUSR) == 0){
         printf("\t mkdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
         return -EACCES;
     }
@@ -398,17 +395,17 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     time_t tiempo = time(NULL);
 
     struct passwd *pws;
-    pws = getpwuid(dir.uid);
+    pws = getpwuid(dir.info.uid);
 
-    new_dir->tipo_bloque = DIRECTORIO;
+    new_dir->info.tipo_bloque = DIRECTORIO;
     memcpy(new_dir->creador, pws->pw_name, strlen(pws->pw_name) + 1);
-    new_dir->uid = dir.uid;
-    new_dir->gid = dir.gid;
-    new_dir->mode = S_IFDIR | mode;
-    printf("\t mkdir dbg: new_bloque mode = %d\n", new_dir->mode);
-    new_dir->fcreacion = tiempo;
-    new_dir->facceso = tiempo;
-    new_dir->fmodificacion = tiempo;
+    new_dir->info.uid = dir.info.uid;
+    new_dir->info.gid = dir.info.gid;
+    new_dir->info.mode = S_IFDIR | mode;
+    printf("\t mkdir dbg: new_bloque mode = %d\n", new_dir->info.mode);
+    new_dir->info.fcreacion = tiempo;
+    new_dir->info.facceso = tiempo;
+    new_dir->info.fmodificacion = tiempo;
     new_dir->cantidad_elementos = 0;
 
     for (x = 0; x < CANT_DIR_ENTRIES; x++)
@@ -452,7 +449,7 @@ static int ondisk_unlink(const char *path)
     struct directorio dir;
     read_block(bloque, &dir);
 
-    if ((dir.mode & S_IWUSR) == 0) {
+    if ((dir.info.mode & S_IWUSR) == 0) {
         printf("\t unlink DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
         return -EACCES;
     }
@@ -518,7 +515,7 @@ static int ondisk_rmdir(const char *path)
     struct directorio dir;
     read_block(bloque, &dir);
 
-    if ((dir.mode & S_IWUSR) == 0) {
+    if ((dir.info.mode & S_IWUSR) == 0) {
         printf("\t rmdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
         return -EACCES;
     }
@@ -593,7 +590,7 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
     read_block(bloque, &dir);
 
     //dir permissions & file name validation
-    if ((dir.mode & S_IWUSR) == 0){
+    if ((dir.info.mode & S_IWUSR) == 0){
         printf("\t rename DUMP: Usuario no tiene write permissions en %s!!\n", directoryname_src);
         return -EACCES;
     }
@@ -666,11 +663,11 @@ static int ondisk_chmod(const char *path, mode_t mode)
 
     time_t tiempo = time(NULL);
     if (tipo_bloque == DIRECTORIO) {
-        ((struct directorio *) &buffer)->mode = mode;
-        ((struct directorio *) &buffer)->fcreacion = tiempo;
+        ((struct directorio *) &buffer)->info.mode = mode;
+        ((struct directorio *) &buffer)->info.fcreacion = tiempo;
     } else {
-        ((struct file_control_block *) &buffer)->mode = mode;
-        ((struct file_control_block *) &buffer)->fcreacion = tiempo;
+        ((struct file_control_block *) &buffer)->info.mode = mode;
+        ((struct file_control_block *) &buffer)->info.fcreacion = tiempo;
     }
 
     write_block(bloque_modificar, &buffer);
@@ -714,13 +711,13 @@ int ondisk_utime(const char *path, struct utimbuf *ut)
 
     time_t tiempo = time(NULL);
     if (tipo_bloque == DIRECTORIO) {
-        ((struct directorio *) &buffer)->facceso = ut->actime;
-        ((struct directorio *) &buffer)->fmodificacion = ut->modtime;
-        ((struct directorio *) &buffer)->fcreacion = tiempo;
+        ((struct directorio *) &buffer)->info.facceso = ut->actime;
+        ((struct directorio *) &buffer)->info.fmodificacion = ut->modtime;
+        ((struct directorio *) &buffer)->info.fcreacion = tiempo;
     } else {
-        ((struct file_control_block *) &buffer)->facceso = ut->actime;
-        ((struct file_control_block *) &buffer)->fmodificacion = ut->modtime;
-        ((struct file_control_block *) &buffer)->fcreacion = tiempo;
+        ((struct file_control_block *) &buffer)->info.facceso = ut->actime;
+        ((struct file_control_block *) &buffer)->info.fmodificacion = ut->modtime;
+        ((struct file_control_block *) &buffer)->info.fcreacion = tiempo;
     }
 
     write_block(bloque_modificar, &buffer);

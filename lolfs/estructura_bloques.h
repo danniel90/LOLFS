@@ -29,13 +29,7 @@ struct entrada_directorio
     unsigned int    apuntador;
 };
 
-
-#define LIBRE               0
-#define ARCHIVO             1
-#define DIRECTORIO          2
-#define CANT_DIR_ENTRIES    (SIZE_BLOCK - 64) / 64
-
-struct directorio
+struct inodo
 {
     unsigned short  tipo_bloque;        //2
     unsigned short  uid;                //2
@@ -44,6 +38,16 @@ struct directorio
     unsigned int    facceso;            //4
     unsigned int    fcreacion;          //4
     unsigned int    fmodificacion;      //4
+};
+
+#define LIBRE               0
+#define ARCHIVO             1
+#define DIRECTORIO          2
+#define CANT_DIR_ENTRIES    (SIZE_BLOCK - 64) / 64
+
+struct directorio
+{
+    struct inodo    info;               //20
     unsigned int    cantidad_elementos; //4
     char            creador[40];        //40
     struct entrada_directorio directory_Entries[CANT_DIR_ENTRIES];
@@ -53,13 +57,7 @@ struct directorio
 
 struct file_control_block
 {
-    unsigned short  tipo_bloque;        //2
-    unsigned short  uid;                //2
-    unsigned short  gid;                //2
-    unsigned short  mode;               //2
-    unsigned int    facceso;            //4
-    unsigned int    fcreacion;          //4
-    unsigned int    fmodificacion;      //4
+    struct inodo    info;               //20
     unsigned int    lenght;             //4     //tamaño en bytes
     char            creador[40];        //40
     unsigned int    bloques[CANT_BLOQUES_DATA];

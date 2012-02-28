@@ -240,36 +240,32 @@ int main(int argc, char **argv)
 
 
 
-    struct directorio *folder = buffer;
+    struct directorio *rootDir = buffer;
 
 
     uid_t uid;
-    if ((uid = getuid()) == -1)
-        perror("getuid() error.");
+    if ((uid = getuid()) == -1) perror("getuid() error.");
 
     gid_t gid;
-    if ((gid = getgid()) == -1)
-         perror("getgid() error.");
+    if ((gid = getgid()) == -1) perror("getgid() error.");
 
     time_t tiempo = time(NULL);
+    struct passwd *pws = getpwuid(uid);
 
-    struct passwd *pws;
-    pws = getpwuid(uid);
-
-    folder->tipo_bloque = DIRECTORIO;
-    memcpy(folder->creador, pws->pw_name, strlen(pws->pw_name) + 1); printf("creador = %s\n", pws->pw_name);
-    folder->uid = uid; printf("uid = %d\n", uid);
-    folder->gid = gid; printf("gid = %d\n", gid);
-    folder->mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO; printf("Permisos para / = %d\n", S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO);
-    folder->fcreacion = tiempo; printf("fcreacion = %s\n", ctime(&tiempo));
-    folder->fmodificacion = tiempo;
-    folder->facceso = tiempo;
-    folder->cantidad_elementos = 0;
+    rootDir->info.tipo_bloque = DIRECTORIO;
+    memcpy(rootDir->creador, pws->pw_name, strlen(pws->pw_name) + 1); printf("creador = %s\n", pws->pw_name);
+    rootDir->info.uid = uid; printf("uid = %d\n", uid);
+    rootDir->info.gid = gid; printf("gid = %d\n", gid);
+    rootDir->info.mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO; printf("Permisos para / = %d\n", S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO);
+    rootDir->info.fcreacion = tiempo; printf("fcreacion = %s\n", ctime(&tiempo));
+    rootDir->info.fmodificacion = tiempo;
+    rootDir->info.facceso = tiempo;
+    rootDir->cantidad_elementos = 0;
 
     for (k = 0; k < CANT_DIR_ENTRIES; k++)
-        folder->directory_Entries[k].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
+        rootDir->directory_Entries[k].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
 
-    escribir_bloque(fd, 1 + size_bloquesmapa, folder);
+    escribir_bloque(fd, 1 + size_bloquesmapa, rootDir);
 
     close(fd);
     return 0;
