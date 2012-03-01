@@ -1,14 +1,11 @@
 #ifndef ESTRUCTURA_BLOQUES_H
 #define ESTRUCTURA_BLOQUES_H
 
-#define SIZE_BLOCK 4096
-#define MAGIC 0xD23
-
-/* Estructura para el super bloque
-   Basada en el examen de SO2*/
+#define BLOCK_SIZE 4096
+#define MAGIC 0x101
 
 
-#define CANT_PADDING (SIZE_BLOCK - 28) / 4
+#define CANT_PADDING (BLOCK_SIZE - 28) / 4
 struct super_bloque
 {
     int magic_number;
@@ -43,7 +40,7 @@ struct inodo
 #define LIBRE               0
 #define ARCHIVO             1
 #define DIRECTORIO          2
-#define CANT_DIR_ENTRIES    (SIZE_BLOCK - 64) / 64
+#define CANT_DIR_ENTRIES    (BLOCK_SIZE - 64) / 64
 
 struct directorio
 {
@@ -53,14 +50,23 @@ struct directorio
     struct entrada_directorio directory_Entries[CANT_DIR_ENTRIES];
 };
 
-#define CANT_BLOQUES_DATA   (SIZE_BLOCK - 64) / sizeof(unsigned int)
+#define CANT_BLOQUES_DIRECTOS (BLOCK_SIZE - 64) / sizeof(unsigned int)
 
 struct file_control_block
 {
     struct inodo    info;               //20
     unsigned int    lenght;             //4     //tamaño en bytes
     char            creador[40];        //40
-    unsigned int    bloques[CANT_BLOQUES_DATA];
+    unsigned int    bloques_directos[CANT_BLOQUES_DIRECTOS - 3];
+    unsigned int    bloque_una_indireccion;
+    unsigned int    bloque_dos_indireccion;
+    unsigned int    bloque_tres_indireccion;
+};
+
+#define CANT_BLOQUES BLOCK_SIZE / 4
+struct indirect_block
+{
+    unsigned int bloques[CANT_BLOQUES];
 };
 
 

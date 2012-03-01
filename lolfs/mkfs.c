@@ -17,12 +17,12 @@ char descripcion;
 
 int escribir_bloque(int fd, int lba, void *buffer)
 {
-    return pwrite(fd, buffer, SIZE_BLOCK, lba*SIZE_BLOCK); //funcion para escribir son para linux
+    return pwrite(fd, buffer, BLOCK_SIZE, lba*BLOCK_SIZE); //funcion para escribir son para linux
 }
 
 int leer_bloque(int fd, int lba, void *buffer)
 {
-    return pread(fd, buffer, SIZE_BLOCK, lba*SIZE_BLOCK);// funcion para leer son para linux
+    return pread(fd, buffer, BLOCK_SIZE, lba*BLOCK_SIZE);// funcion para leer son para linux
 }
 
 #include <getopt.h>
@@ -71,23 +71,23 @@ void mensaje()
 
     if (tipo == 'G'){
         //total_bloques = size * 1024 * 1024 * 1024;
-        tmp = size / SIZE_BLOCK;
+        tmp = size / BLOCK_SIZE;
         tmp = tmp / 8;
-        total_bloques = tmp / SIZE_BLOCK;
+        total_bloques = tmp / BLOCK_SIZE;
         r = total_bloques;
         return r;
     } else if (tipo == 'M'){
         //total_bloques = size * 1024 * 1024;
-        tmp = size / SIZE_BLOCK;
+        tmp = size / BLOCK_SIZE;
         tmp = tmp / 8;
-        total_bloques = tmp / SIZE_BLOCK;
+        total_bloques = tmp / BLOCK_SIZE;
         r = total_bloques;
         return r;
     } else if(tipo =='K'){
         total_bloques = size * 1024;
-        tmp = total_bloques / SIZE_BLOCK;
+        tmp = total_bloques / BLOCK_SIZE;
         tmp = tmp / 8;
-        total_bloques = tmp / SIZE_BLOCK;
+        total_bloques = tmp / BLOCK_SIZE;
         r = total_bloques;
         return r;
     }
@@ -109,7 +109,7 @@ void mensaje()
          leer_bloque(fd, i, buffer);
 
          unsigned int j;
-         for(j = 0; j < SIZE_BLOCK; j++){
+         for(j = 0; j < BLOCK_SIZE; j++){
              if (buffer[j] != 0){
                  int x;
                  for(x = 0; x < 7; x++){
@@ -160,16 +160,16 @@ int main(int argc, char **argv)
 
     int i, fd, numero_bloques;
     struct stat sb;
-    void *buffer = calloc(SIZE_BLOCK, 1);
+    void *buffer = calloc(BLOCK_SIZE, 1);
 
     if (size_disco == 0) {
         if ((fd = open(path, O_WRONLY, 0777) < 0) || (fstat(fd, &sb) <  0)) {
             perror("Error al abrir el archivo!!\n"),
             exit(1);
         }
-        numero_bloques = sb.st_size / SIZE_BLOCK;
+        numero_bloques = sb.st_size / BLOCK_SIZE;
     } else {
-        numero_bloques = size_disco / SIZE_BLOCK;
+        numero_bloques = size_disco / BLOCK_SIZE;
 
         if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC)) < 0) {
               perror("Error al crear el archivo");
@@ -177,7 +177,7 @@ int main(int argc, char **argv)
         }
 
         for (i = 0; i < numero_bloques; i++) {
-            if (write(fd, buffer, SIZE_BLOCK) < 0) {
+            if (write(fd, buffer, BLOCK_SIZE) < 0) {
                 perror("Error al escribir al archivo!!\n");
                 exit(1);
             }
@@ -189,7 +189,7 @@ int main(int argc, char **argv)
 
     struct super_bloque *sp = buffer;
     sp->magic_number = MAGIC;
-    sp->size_bloques = SIZE_BLOCK;
+    sp->size_bloques = BLOCK_SIZE;
     sp->total_bloques = numero_bloques;
     sp->primerbloque_mapabits = 1;
 
@@ -203,17 +203,17 @@ int main(int argc, char **argv)
     /*MAPA DE BITS
      Escribir los Bloques que son necesarios para el mapa de bits          */
 
-    unsigned char arr[SIZE_BLOCK];
-    void *bitsmapa = malloc(SIZE_BLOCK);
+    unsigned char arr[BLOCK_SIZE];
+    void *bitsmapa = malloc(BLOCK_SIZE);
 
     int j, k, cont = 0;
     int escribirmapabits = 1 + 1 + size_bloquesmapa;//Cantidad de bits que voy a escribir en el mapa de bits
-    for (j = 0; j < SIZE_BLOCK; j++)
+    for (j = 0; j < BLOCK_SIZE; j++)
         arr[j] = 255;
 
     for (i = 1; i < i + size_bloquesmapa; i++) {        
         bool flag = false;
-        for (j = 0;j < SIZE_BLOCK; j++) {
+        for (j = 0;j < BLOCK_SIZE; j++) {
             if (arr[j] != 0) {
                 for (k = 0;k < 7; k++) {
                     if (cont < escribirmapabits) {

@@ -29,7 +29,7 @@ unsigned int alocarBloque()
         read_block(i,buffer);
 
         unsigned int j;
-        for(j = 0; j < SIZE_BLOCK; j++){
+        for(j = 0; j < BLOCK_SIZE; j++){
             if (buffer[j] != 0){
 
                 int x;
@@ -68,7 +68,6 @@ void liberarBloque(unsigned int bloque)
 
  void setPath(const char *path)
  {
-    //printf("setPath dbg: entra\n");
     lolfs.index = 0;
     char copia[strlen(path) + 1];
     strcpy(copia, path);
@@ -86,13 +85,15 @@ void liberarBloque(unsigned int bloque)
         }
         dir_name = strtok(NULL, "/");
     }
-    //printf("setPath dbg: sale\n");
 }
 
  int searchFile(struct directorio *dir, char *file_name)
  {
      int identry;
      for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
+         if (dir->directory_Entries[identry].tipo_bloque == LIBRE)
+             continue;
+
          struct entrada_directorio dirEntry = dir->directory_Entries[identry];
 
          if (strcmp(file_name, dirEntry.nombre) == 0)
@@ -104,13 +105,11 @@ void liberarBloque(unsigned int bloque)
 
  int getBlock(const char *path)
  {
-     //printf("getBlock dbg: entra\n");
      setPath(path);
 
      int bloque = superBlock.bloque_root;
 
      if (lolfs.index <= 0){
-         //printf("getBlock dbg: sale - bloque = %d\n", bloque);
          return bloque;
      }
 
@@ -126,7 +125,6 @@ void liberarBloque(unsigned int bloque)
          read_block(bloque, &buffer);
      }
 
-     //printf("getBlock dbg: sale - bloque = %d\n", bloque);
      return bloque;
  }
 
@@ -155,7 +153,7 @@ char *getFilename(const char *path)
     return temp;
 }
 
-char *getdirectorio(const char *path)
+char *getDirectory(const char *path)
 {
     if (strcmp(path, "/") == 0)
             return "/";
@@ -179,23 +177,19 @@ char *getdirectorio(const char *path)
     return temp;
 }
 
-int setDirStat(struct stat* sb, struct directorio *entry)
+int setStat(struct stat* sb, void *entry)
 {
-    sb->st_blocks   = 1;
-    sb->st_nlink    = 2;
-    sb->st_uid      = entry->info.uid;
-    sb->st_gid      = entry->info.gid;
-    sb->st_size     = SIZE_BLOCK;
-    sb->st_mtime    = entry->info.fmodificacion;
-    sb->st_atime    = entry->info.facceso;
-    sb->st_ctime    = entry->info.fcreacion;
-    sb->st_mode     = entry->info.mode;
+    sb->st_blocks   = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? BLOCK_SIZE / 512 : ((unsigned)((struct file_control_block *) entry)->bloques_directos) / 512;
+    sb->st_nlink    = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? 2 : 1;
+    sb->st_size     = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? BLOCK_SIZE : ((struct file_control_block *) entry)->lenght;
+    sb->st_uid      = ((struct inodo *)entry)->uid;
+    sb->st_gid      = ((struct inodo *)entry)->gid;
+    sb->st_mode     = ((struct inodo *)entry)->mode;
+    sb->st_ctime    = ((struct inodo *)entry)->fcreacion;
+    sb->st_mtime    = ((struct inodo *)entry)->fmodificacion;
+    sb->st_atime    = ((struct inodo *)entry)->facceso;
     return 0;
 }
-
-
-//static const char *hello_str = "Hello World!\n";
-//static const char *hello_path = "/hello";
 
 /*----------------------------------------------------------FUSE--------------------------------------------------------*/
 
@@ -207,7 +201,7 @@ int setDirStat(struct stat* sb, struct directorio *entry)
 void *ondisk_init(struct fuse_conn_info *conn)
 {
     read_block(0, &buffer);
-    memcpy(&superBlock, buffer, sizeof(struct super_bloque));
+    memcpy(&superBlock, &buffer, sizeof(struct super_bloque));
 
     return 0;
 }
@@ -215,13 +209,13 @@ void *ondisk_init(struct fuse_conn_info *conn)
 /* Note on path translation errors:
  * In addition to the method-specific errors listed below, almost
  * every method can return one of the following errors if it fails to
- * locate a file or directorio corresponding to a specified path.
+ * locate a file or directory corresponding to a specified path.
  *
  * ENOENT - a component of the path is not present.
  * ENOTDIR - an intermediate component of the path (e.g. 'b' in
- *           /a/b/c) is not a directorio
+ *           /a/b/c) is not a directory
  * EACCES  - the user lacks *execute* permission (yes, execute) for an
- *           intermediate directorio in the path.
+ *           intermediate directory in the path.
  *
  * In our case we assume a single user, and so it is sufficient to
  * use this test:    if ((mode & S_IXUSR) == 0)
@@ -230,7 +224,7 @@ void *ondisk_init(struct fuse_conn_info *conn)
  * See 'man path_resolution' for more information.
  */
 
-/* getattr - get file or directorio attributes. For a description of
+/* getattr - get file or directory attributes. For a description of
  *  the fields in 'struct stat', see 'man lstat'.
  * Note - fields not provided in CS7600fs are:
  *    st_nlink - always set to 1
@@ -252,20 +246,19 @@ static int ondisk_getattr(const char *path, struct stat *stbuf)
     printf("\t getattr dbg: bloque = %d | path = %s\n", bloque, path);
     read_block(bloque, &dir);
 
-    setDirStat(stbuf, &dir); //TODO: set for files!!!
+    setStat(stbuf, &dir);
 
     return 0;
-
 }
 
-/* readdir - get directorio contents
- * for each entry in the directorio, invoke:
+/* readdir - get directory contents
+ * for each entry in the directory, invoke:
  *     filler(buf, <name>, <statbuf>, 0)
  * where <statbuf> is a struct stat, just like in getattr.
  * Errors - path resolution, EACCES, ENOTDIR, ENOENT
  *
  * EACCES is returned if the user lacks *read* permission to the
- * directorio - i.e.:     if ((mode & S_IRUSR) == 0)
+ * directory - i.e.:     if ((mode & S_IRUSR) == 0)
  *                           return -EACCES;
  */
 static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -302,8 +295,8 @@ static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         if (dir.directory_Entries[x].tipo_bloque == LIBRE)
             continue;
         else {
-            read_block(x,buffer);
-            setDirStat(&sb, (void *)buffer);
+            read_block(x, &buffer);
+            setStat(&sb, (void *)buffer);
             name = dir.directory_Entries[x].nombre;
             filler(buf, name, &sb, 0);
         }
@@ -316,25 +309,105 @@ static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
  * Errors - path resolution, EACCES, EEXIST
  *
  * EACCES is returned if the user does not have write permission to
- * the enclosing directorio:
+ * the enclosing directory:
  *       if ((mode & S_IWUSR) == 0)
  *           return -EACCES;
- * If a file or directorio of this name already exists, return -EEXIST.
+ * If a file or directory of this name already exists, return -EEXIST.
  */
 static int ondisk_create(const char *path, mode_t mode,
                          struct fuse_file_info *fi)
 {
-    return -EOPNOTSUPP;
+    char *directoryname = getDirectory(path);
+    int bloque = getBlock(directoryname);
+
+    if (bloque <= 0) {
+        printf("\t create DUMP: bloque = %d | directoryname = %s\n", bloque, directoryname);
+        return -ENOTDIR;
+    }
+
+    char *filename = getFilename(path);
+
+    printf("\t create dbg: PATH = %s | Parent Dir = %s | BloqNum = %d | File = %s\n", path, directoryname, bloque, filename);
+
+    //variable declaration/init
+    struct directorio dir;
+    read_block(bloque, &dir);
+
+    //dir permissions & file name validation
+    if ((dir.info.mode & S_IWUSR) == 0) {
+        printf("\t create DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
+        return -EACCES;
+    }
+
+    if (searchFile(&dir, filename) != -ENOENT) {
+        printf("\t create DUMP: %s ya existe en %s!!\n", filename, directoryname);
+        return -EEXIST;
+    }
+
+    //crear entrada nueva
+    if (dir.cantidad_elementos == 63) {
+        printf("\t create DUMP: directorio %s lleno!!\n", directoryname);
+        return -ENOTEMPTY;
+    }
+
+    //new directory creation/init
+    unsigned int new_bloque = alocarBloque();
+    printf("\t create dbg: new_bloque = %d\n", new_bloque);
+
+    //directory entry creation
+    struct entrada_directorio new_dirEntry;
+
+    memcpy(new_dirEntry.nombre, filename, strlen(filename) + 1);
+    new_dirEntry.apuntador = new_bloque;
+    new_dirEntry.tipo_bloque = ARCHIVO;
+
+    dir.cantidad_elementos++;
+
+    int x;
+    for (x = 0; x < CANT_DIR_ENTRIES; x++) {
+        if (dir.directory_Entries[x].tipo_bloque == LIBRE){
+            dir.directory_Entries[x] = new_dirEntry;
+            break;
+        }
+    }
+
+    //file creation
+    struct file_control_block file;
+    memset(&file, 0, BLOCK_SIZE);
+
+    time_t tiempo = time(NULL);
+    struct passwd *pws = getpwuid(dir.info.uid);
+
+    file.info.tipo_bloque   = DIRECTORIO;
+    memcpy(file.creador, pws->pw_name, strlen(pws->pw_name) + 1);
+    file.info.uid           = dir.info.uid;
+    file.info.gid           = dir.info.gid;
+    file.info.mode          = S_IFREG | mode;
+    file.info.fcreacion     = tiempo;
+    file.info.facceso       = tiempo;
+    file.info.fmodificacion = tiempo;
+    file.lenght             = 0;
+
+    //writing
+    write_block(bloque, &dir);
+
+    //writing directory
+    write_block(new_bloque, &file);
+
+    printf("\t create dbg: escribiendo super bloque \n");
+    superBlock.bloques_libres--;
+    write_block(0, &superBlock);
+
+    return 0;
 }
 
-/* mkdir - create a directorio with the given mode.
+/* mkdir - create a directory with the given mode.
  * Errors - path resolution, EACCES, EEXIST
  * Conditions for EACCES and EEXIST are the same as for create.
  */
 static int ondisk_mkdir(const char *path, mode_t mode)
 {
-    char *directoryname = getdirectorio(path);
-    //int bloque = getBlock(path);
+    char *directoryname = getDirectory(path);
     int bloque = getBlock(directoryname);
 
     if (bloque <= 0) {
@@ -343,7 +416,6 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     }
 
     char *filename = getFilename(path);
-    //char *directoryname = getdirectorio(path);
 
     printf("\t mkdir dbg: PATH = %s | Parent Dir = %s | BloqNum = %d | File = %s\n", path, directoryname, bloque, filename);
 
@@ -352,27 +424,27 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     read_block(bloque, &dir);
 
     //dir permissions & file name validation
-    if ((dir.info.mode & S_IWUSR) == 0){
+    if ((dir.info.mode & S_IWUSR) == 0) {
         printf("\t mkdir DUMP: Usuario no tiene write permissions en %s!!\n", directoryname);
         return -EACCES;
     }
 
-    if (searchFile(&dir, filename) != -ENOENT){
+    if (searchFile(&dir, filename) != -ENOENT) {
         printf("\t mkdir DUMP: %s ya existe en %s!!\n", filename, directoryname);
         return -EEXIST;
     }
 
     //crear entrada nueva
-    if (dir.cantidad_elementos == 63){
+    if (dir.cantidad_elementos == 63) {
         printf("\t mkdir DUMP: directorio %s lleno!!\n", directoryname);
         return -ENOTEMPTY;
     }
 
-    //new directorio creation/init
+    //new directory creation/init
     unsigned int new_bloque = alocarBloque();
     printf("\t mkdir dbg: new_bloque = %d\n", new_bloque);
 
-    //directorio entry creation
+    //directory entry creation
     struct entrada_directorio new_dirEntry;
 
     memcpy(new_dirEntry.nombre, filename, strlen(filename) + 1);
@@ -382,40 +454,38 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     dir.cantidad_elementos++;
 
     int x;
-    for (x = 0; x < CANT_DIR_ENTRIES; x++){
+    for (x = 0; x < CANT_DIR_ENTRIES; x++) {
         if (dir.directory_Entries[x].tipo_bloque == LIBRE){
             dir.directory_Entries[x] = new_dirEntry;
             break;
         }
     }
 
-    //directorio creation
-    struct directorio *new_dir = (struct directorio *) calloc(CANT_DIR_ENTRIES, sizeof(struct entrada_directorio));
+    //directory creation
+    struct directorio new_dir;// = (struct directorio *) calloc(CANT_DIR_ENTRIES, sizeof(struct entrada_directorio));
+    memset(&new_dir, 0, BLOCK_SIZE);
 
     time_t tiempo = time(NULL);
+    struct passwd *pws = getpwuid(dir.info.uid);
 
-    struct passwd *pws;
-    pws = getpwuid(dir.info.uid);
+    new_dir.info.tipo_bloque   = DIRECTORIO;
+    memcpy(new_dir.creador, pws->pw_name, strlen(pws->pw_name) + 1);
+    new_dir.info.uid           = dir.info.uid;
+    new_dir.info.gid           = dir.info.gid;
+    new_dir.info.mode          = S_IFDIR | mode;
+    new_dir.info.fcreacion     = tiempo;
+    new_dir.info.facceso       = tiempo;
+    new_dir.info.fmodificacion = tiempo;
+    new_dir.cantidad_elementos = 0;
 
-    new_dir->info.tipo_bloque = DIRECTORIO;
-    memcpy(new_dir->creador, pws->pw_name, strlen(pws->pw_name) + 1);
-    new_dir->info.uid = dir.info.uid;
-    new_dir->info.gid = dir.info.gid;
-    new_dir->info.mode = S_IFDIR | mode;
-    printf("\t mkdir dbg: new_bloque mode = %d\n", new_dir->info.mode);
-    new_dir->info.fcreacion = tiempo;
-    new_dir->info.facceso = tiempo;
-    new_dir->info.fmodificacion = tiempo;
-    new_dir->cantidad_elementos = 0;
-
-    for (x = 0; x < CANT_DIR_ENTRIES; x++)
-        new_dir->directory_Entries[x].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
+    //for (x = 0; x < CANT_DIR_ENTRIES; x++)
+        //new_dir->directory_Entries[x].tipo_bloque = LIBRE; //verificar que estan LIBRE los dirEntries
 
     //writing
     write_block(bloque, &dir);
 
-    //writing directorio
-    write_block(new_bloque, new_dir);
+    //writing directory
+    write_block(new_bloque, &new_dir);
 
     printf("\t mkdir dbg: escribiendo super bloque \n");
     superBlock.bloques_libres--;
@@ -424,23 +494,73 @@ static int ondisk_mkdir(const char *path, mode_t mode)
     return 0;
 }
 
+
+void free_indirect_block(unsigned int bloque)
+{
+    struct indirect_block iblock;
+    memset(&iblock, 0, BLOCK_SIZE);
+
+    read_block(bloque, &iblock);
+
+    int x;
+    for (x = 0; x < CANT_BLOQUES; x++) {
+        if (iblock.bloques[x] == 0)
+            break;
+        liberarBloque(iblock.bloques[x]);
+        superBlock.bloques_libres++;
+        iblock.bloques[x] = 0;
+    }
+}
+
+void free_double_indirect_block(unsigned int bloque)
+{
+    struct indirect_block iblock;
+    memset(&iblock, 0, BLOCK_SIZE);
+
+    read_block(bloque, &iblock);
+
+    int x;
+    for (x = 0; x < CANT_BLOQUES; x++) {
+        if (iblock.bloques[x] == 0)
+            break;
+        free_indirect_block(iblock.bloques[x]);
+        iblock.bloques[x] = 0;
+    }
+}
+
+void free_triple_indirect_block(unsigned int bloque)
+{
+    struct indirect_block iblock;
+    memset(&iblock, 0, BLOCK_SIZE);
+
+    read_block(bloque, &iblock);
+
+    int x;
+    for (x = 0; x < CANT_BLOQUES; x++) {
+        if (iblock.bloques[x] == 0)
+            break;
+        free_double_indirect_block(iblock.bloques[x]);
+        iblock.bloques[x] = 0;
+    }
+}
+
+
 /* unlink - delete a file
  *  Errors - path resolution, EACCES, ENOENT, EISDIR
  * Requires user *write* permission to the containing
- *  directorio. (permissions on the file itself are ignored)
+ *  directory. (permissions on the file itself are ignored)
  */
 static int ondisk_unlink(const char *path)
 {
-    printf("\t unlink dbg: path = %s\n", path);
-    //TODO: hacerlo recursivo
+    //TODO: hacerlo recursivo para cada bloque de indireccion de datos
     printf("\t unlink dbg: path = %s\n", path);
 
     char *filename = getFilename(path);
-    char *directoryname = getdirectorio(path);
-    int bloque = getBlock(path);
+    char *directoryname = getDirectory(path);
+    int bloque = getBlock(directoryname);
 
     if (bloque <= 0) {
-        printf("\t unlink DUMP: bloque = %d | path = %s\n", bloque, path);
+        printf("\t unlink DUMP: bloque = %d | directoryname = %s\n", bloque, directoryname);
         return -ENOTDIR;
     }
 
@@ -474,35 +594,67 @@ static int ondisk_unlink(const char *path)
     struct file_control_block fcb;
     read_block(bloque_liberar, &fcb);
 
-    int x ;
-    for (x = 0; x < CANT_BLOQUES_DATA; x++) {
-        liberarBloque(fcb.bloques[x]);
+                                                                          //TODO: terminar :P
+    int x;
+    for (x = 0; x < CANT_BLOQUES_DIRECTOS; x++) {
+        if (fcb.bloques_directos[x] == 0)
+            break;
+        liberarBloque(fcb.bloques_directos[x]);
         superBlock.bloques_libres++;
     }
+
     liberarBloque(bloque_liberar);
+    superBlock.bloques_libres++;
 
     printf("\t unlink dbg: excribiendo %s\n", directoryname);
     write_block(bloque, &dir);
 
     printf("\t unlink dbg: escribiendo super bloque \n");
-    superBlock.bloques_libres++;
+
     write_block(0, &superBlock);
 
     return 0;
 }
 
-/* rmdir - remove a directorio
+
+int recursive_rmdir(int bloque, char *filename)
+{
+    read_block(bloque, &buffer);
+
+    if (((struct inodo*)&buffer)->tipo_bloque == DIRECTORIO) {
+        int x;
+        for (x = 0; x < CANT_DIR_ENTRIES; x++) {
+            if (((struct directorio *) &buffer)->directory_Entries[x].tipo_bloque != LIBRE){
+                int ret = recursive_rmdir(((struct directorio *) &buffer)->directory_Entries[x].apuntador,
+                                          (((struct directorio *) &buffer)->directory_Entries[x].nombre));
+
+                if (ret < 0)
+                    return ret;
+            }
+        }
+
+        printf("\t rmdir dbg: liberando bloque #%d de %s\n", bloque, filename);
+        liberarBloque(bloque);
+        superBlock.bloques_libres++;
+    } else {
+        printf("\t rmdir dbg: liberando bloque de %s\n", filename);
+        liberarBloque(bloque);
+    }
+
+    return 0;
+}
+
+/* rmdir - remove a directory
  *  Errors - path resolution, EACCES, ENOENT, ENOTDIR, ENOTEMPTY
  * Requires user *write* permission to the containing
- *  directorio. (permissions on the directorio itself are ignored)
+ *  directory. (permissions on the directory itself are ignored)
  */
 static int ondisk_rmdir(const char *path)
-{   
-    //TODO: hacerlo recursivo
+{
     printf("\t rmdir dbg: path = %s\n", path);
 
     char *filename = getFilename(path);
-    char *directoryname = getdirectorio(path);
+    char *directoryname = getDirectory(path);
     int bloque = getBlock(directoryname);
 
     if (bloque <= 0) {
@@ -538,36 +690,37 @@ static int ondisk_rmdir(const char *path)
     printf("\t rmdir dbg: excribiendo %s\n", directoryname);
     write_block(bloque, &dir);
 
-    printf("\t rmdir dbg: liberando bloque de %s\n", filename);
-    liberarBloque(bloque_liberar);
+    int rec = recursive_rmdir(bloque_liberar, filename);
+
+    if (rec < 0)
+        return rec;
 
     printf("\t rmdir dbg: escribiendo super bloque \n");
-    superBlock.bloques_libres++;
     write_block(0, &superBlock);
 
     return 0;
 }
 
-/* rename - rename a file or directorio
+/* rename - rename a file or directory
  * Errors - path resolution, ENOENT, EACCES, EINVAL, EEXIST
  *
  * ENOENT - source does not exist
  * EEXIST - destination already exists
- * EACCES - no write permission to directorio. Permissions
- * EINVAL - source and destination are not in the same directorio
+ * EACCES - no write permission to directory. Permissions
+ * EINVAL - source and destination are not in the same directory
  *
  * Note that this is a simplified version of the UNIX rename
  * functionality - see 'man 2 rename' for full semantics. In
  * particular, the full version can move across directories, replace a
- * destination file, and replace an empty directorio with a full one.
+ * destination file, and replace an empty directory with a full one.
  */
 static int ondisk_rename(const char *src_path, const char *dst_path)
 {
     char *filename_src = getFilename(src_path);
-    char *directoryname_src = getdirectorio(src_path);
+    char *directoryname_src = getDirectory(src_path);
 
     char *filename_dst = getFilename(dst_path);
-    char *directoryname_dst = getdirectorio(dst_path);
+    char *directoryname_dst = getDirectory(dst_path);
 
     int bloque = getBlock(directoryname_src);
     int bloque2 = getBlock(directoryname_dst);
@@ -582,7 +735,7 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
         return -EINVAL;
     }
 
-    printf("\t rename dbg: SRC_PATH = %s | DST_PATH = %s | SRC_Parent Dir = %s | DST_Parent Dir = %s | BloqNum = %d | SRC_File = %s | DST_File = %s\n",
+    printf("\t rename dbg: SRC_PATH = %s | DST_PATH = %s \n\t\t SRC_Parent Dir = %s | DST_Parent Dir = %s | BloqNum = %d \n\t\t SRC_File = %s | DST_File = %s\n",
                            src_path, dst_path, directoryname_src, directoryname_dst, bloque, filename_src, filename_dst);
 
     //variable declaration/init
@@ -622,7 +775,7 @@ static int ondisk_rename(const char *src_path, const char *dst_path)
  *
  * Errors - path resolution, ENOENT.
  *
- * Note that no write permissions to the file/directorio or containing
+ * Note that no write permissions to the file/directory or containing
  * are needed - if you can resolve the path, then you can make the
  * change. (normally EACCES is returned if the invoking user does not
  * own the file)
@@ -632,7 +785,7 @@ static int ondisk_chmod(const char *path, mode_t mode)
     printf("\t chmod dbg: path = %s\n", path);
 
     char *filename = getFilename(path);
-    char *directoryname = getdirectorio(path);
+    char *directoryname = getDirectory(path);
     int bloque = getBlock(directoryname);
 
     if (bloque <= 0) {
@@ -647,7 +800,7 @@ static int ondisk_chmod(const char *path, mode_t mode)
 
     int bloque_modificar = searchFile(&dir, filename);
     if (bloque_modificar == -ENOENT) {
-        printf("\t rmdir DUMP: %s no existe en %s!!\n", filename, directoryname);
+        printf("\t chmod DUMP: %s no existe en %s!!\n", filename, directoryname);
         return -ENOENT;
     }
 
@@ -680,7 +833,7 @@ int ondisk_utime(const char *path, struct utimbuf *ut)
     printf("\t utime dbg: path = %s\n", path);
 
     char *filename = getFilename(path);
-    char *directoryname = getdirectorio(path);
+    char *directoryname = getDirectory(path);
     int bloque = getBlock(directoryname);
 
     if (bloque <= 0) {
@@ -737,7 +890,79 @@ static int ondisk_truncate(const char *path, off_t len)
     if (len != 0)
         return -EINVAL;		/* invalid argument */
 
-    return -EOPNOTSUPP;
+    printf("\t truncate dbg: path = %s\n", path);
+
+    char *filename = getFilename(path);
+    char *directoryname = getDirectory(path);
+    int bloque = getBlock(directoryname);
+
+    if (bloque <= 0) {
+        printf("\t truncate DUMP: bloque = %d | directoryname = %s\n", bloque, directoryname);
+        return -ENOTDIR;
+    }
+
+    printf("\t truncate dbg: filename = %s | directorio = %s \n", filename, directoryname);
+
+    struct directorio dir;
+    read_block(bloque, &dir);
+
+    int bloque_modificar = searchFile(&dir, filename);
+    if (bloque_modificar == -ENOENT) {
+        printf("\t truncate DUMP: %s no existe en %s!!\n", filename, directoryname);
+        return -ENOENT;
+    }
+
+    int identry, tipo_bloque = 0;
+    for (identry = 0; identry < CANT_DIR_ENTRIES; identry++) {
+        if (strcmp(filename, dir.directory_Entries[identry].nombre) == 0) {
+            tipo_bloque = dir.directory_Entries[identry].tipo_bloque;
+            break;
+        }
+    }
+
+    if (tipo_bloque != ARCHIVO) {
+        printf("\t truncate DUMP: %s no es archivo!!\n", filename);
+        return -EISDIR;
+    }
+
+    struct file_control_block file;
+    read_block(bloque_modificar, &file);
+
+    //logica
+    //bloques directos
+    printf("\t truncate dbg: liberando bloques directos\n");
+    int x;
+    for (x = 0; x < CANT_BLOQUES_DIRECTOS; x++){
+        if (file.bloques_directos[x] == 0)
+            break;
+
+        liberarBloque(file.bloques_directos[x]);
+        superBlock.bloques_libres++;
+        file.bloques_directos[x] = 0;
+    }
+
+    //bloques indirectos 1er nivel
+    printf("\t truncate dbg: liberando bloques de 1 nivel de indireccion\n");
+    free_indirect_block(file.bloque_una_indireccion);
+    file.bloque_una_indireccion = 0;
+
+    //bloques indirectos 2do nivel
+    printf("\t truncate dbg: liberando bloques de 2 niveles de indireccion\n");
+    free_double_indirect_block(file.bloque_dos_indireccion);
+    file.bloque_dos_indireccion = 0;
+
+    //bloques indirectos 3er nivel
+    printf("\t truncate dbg: liberando bloques de 3 niveles de indireccion\n");
+    free_triple_indirect_block(file.bloque_tres_indireccion);
+    file.bloque_tres_indireccion = 0;
+
+    file.lenght = 0;
+
+    write_block(bloque_modificar, &file);
+
+    write_block(0, &superBlock);
+
+    return 0;
 }
 
 /* read - read data from an open file.
@@ -781,7 +1006,7 @@ static int ondisk_statfs(const char *path, struct statvfs *st)
      * it's OK to calculate this dynamically on the rare occasions
      * when this function is called.
      */
-    st->f_bsize = SIZE_BLOCK;
+    st->f_bsize = BLOCK_SIZE;
     st->f_blocks = superBlock.total_bloques - (superBlock.sizebloques_mapabits - superBlock.primerbloque_mapabits) - 1;
     st->f_bfree = superBlock.bloques_libres;
     st->f_bavail = st->f_bfree;

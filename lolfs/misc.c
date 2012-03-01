@@ -46,12 +46,12 @@ struct hw4_info {
  */
 int write_block(int lba, void *buf)
 {
-    return pwrite(hw4_data.img_fd, buf, SIZE_BLOCK, lba*SIZE_BLOCK);
+    return pwrite(hw4_data.img_fd, buf, BLOCK_SIZE, lba*BLOCK_SIZE);
 }
 
 int read_block(int lba, void *buf)
 {
-    return pread(hw4_data.img_fd, buf, SIZE_BLOCK, lba*SIZE_BLOCK);
+    return pread(hw4_data.img_fd, buf, BLOCK_SIZE, lba*BLOCK_SIZE);
 }
 
 char *strmode(char *buf, int mode);

@@ -25,7 +25,7 @@ struct lolfs_path
     int index;
 };
 
-char buffer[SIZE_BLOCK];
+char buffer[BLOCK_SIZE];
 struct super_bloque superBlock;
 struct lolfs_path lolfs;
 
