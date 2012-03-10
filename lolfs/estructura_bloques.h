@@ -50,14 +50,14 @@ struct directorio
     struct entrada_directorio directory_Entries[CANT_DIR_ENTRIES];
 };
 
-#define CANT_BLOQUES_DIRECTOS (BLOCK_SIZE - 64) / sizeof(unsigned int)
+#define CANT_BLOQUES_DIRECTOS ((BLOCK_SIZE - 64) / sizeof(unsigned int))  - 3
 
 struct file_control_block
 {
     struct inodo    info;               //20
     unsigned int    lenght;             //4     //tamaño en bytes
     char            creador[40];        //40
-    unsigned int    bloques_directos[CANT_BLOQUES_DIRECTOS - 3];
+    unsigned int    bloques_directos[CANT_BLOQUES_DIRECTOS];
     unsigned int    bloque_una_indireccion;
     unsigned int    bloque_dos_indireccion;
     unsigned int    bloque_tres_indireccion;

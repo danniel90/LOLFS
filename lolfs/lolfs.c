@@ -49,13 +49,13 @@ unsigned int alocarBloque()
 
 void liberarBloque(unsigned int bloque)
 {
-    unsigned int size_bloques = superBlock.sizebloques_mapabits;
-    unsigned int size_bitmap = superBlock.sizebloques_mapabits;
+    unsigned int size_bloques   = superBlock.sizebloques_mapabits;
+    unsigned int size_bitmap    = superBlock.sizebloques_mapabits;
 
-    unsigned int queBloque = (bloque / (8 * size_bitmap));
-    unsigned int tmp = (queBloque % (8 * size_bloques));
-    unsigned int queByte = tmp / 8;
-    unsigned int queBit = tmp % 8;
+    unsigned int queBloque  = (bloque / (8 * size_bitmap));
+    unsigned int tmp        = (queBloque % (8 * size_bloques));
+    unsigned int queByte    = tmp / 8;
+    unsigned int queBit     = tmp % 8;
 
     read_block(queBloque, buffer);
     buffer[queByte] |= (1 << queBit);
@@ -65,6 +65,19 @@ void liberarBloque(unsigned int bloque)
 
 /*--------------------------------------------------------Filesystem----------------------------------------------------------*/
 
+void initFileRanges()
+{
+    BYTES_BLOQUES_DIRECTOS_FCB     = CANT_BLOQUES_DIRECTOS * BLOCK_SIZE;
+    BYTES_BLOQUES_DIRECTOS         = CANT_BLOQUES * BLOCK_SIZE;
+    BYTES_BLOQUE_UNA_INDIRECCION   = BYTES_BLOQUES_DIRECTOS;
+    BYTES_BLOQUE_DOS_INDIRECCION   = BYTES_BLOQUE_UNA_INDIRECCION * CANT_BLOQUES;
+    BYTES_BLOQUE_TRES_INDIRECCION  = BYTES_BLOQUE_DOS_INDIRECCION * CANT_BLOQUES;
+
+    MAX_RANGE_FCB_DIRECT_BLOCKS     = BYTES_BLOQUES_DIRECTOS_FCB;
+    MAX_RANGE_1LVL_INDIRECT_BLOCK   = BYTES_BLOQUE_UNA_INDIRECCION + MAX_RANGE_FCB_DIRECT_BLOCKS;
+    MAX_RANGE_2LVL_INDIRECT_BLOCK   = BYTES_BLOQUE_DOS_INDIRECCION + MAX_RANGE_1LVL_INDIRECT_BLOCK;
+    MAX_RANGE_3LVL_INDIRECT_BLOCK   = BYTES_BLOQUE_TRES_INDIRECCION + MAX_RANGE_2LVL_INDIRECT_BLOCK;
+}
 
  void setPath(const char *path)
  {
@@ -90,7 +103,7 @@ void liberarBloque(unsigned int bloque)
  int searchFile(struct directorio *dir, char *file_name)
  {
      int identry;
-     for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
+     for (identry = 0; identry < CANT_DIR_ENTRIES; identry++) {
          if (dir->directory_Entries[identry].tipo_bloque == LIBRE)
              continue;
 
@@ -200,6 +213,7 @@ int setStat(struct stat* sb, void *entry)
  */
 void *ondisk_init(struct fuse_conn_info *conn)
 {
+    initFileRanges();
     read_block(0, &buffer);
     memcpy(&superBlock, &buffer, sizeof(struct super_bloque));
 
@@ -262,7 +276,7 @@ static int ondisk_getattr(const char *path, struct stat *stbuf)
  *                           return -EACCES;
  */
 static int ondisk_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-                       off_t offset, struct fuse_file_info *fi)
+                          off_t offset, struct fuse_file_info *fi)
 {
     char *name;
     struct stat sb;
@@ -603,6 +617,10 @@ static int ondisk_unlink(const char *path)
         superBlock.bloques_libres++;
     }
 
+    free_indirect_block(fcb.bloque_una_indireccion);
+    free_double_indirect_block(fcb.bloque_dos_indireccion);
+    free_triple_indirect_block(fcb.bloque_tres_indireccion);
+
     liberarBloque(bloque_liberar);
     superBlock.bloques_libres++;
 
@@ -615,7 +633,6 @@ static int ondisk_unlink(const char *path)
 
     return 0;
 }
-
 
 int recursive_rmdir(int bloque, char *filename)
 {
@@ -898,7 +915,7 @@ static int ondisk_truncate(const char *path, off_t len)
 
     if (bloque <= 0) {
         printf("\t truncate DUMP: bloque = %d | directoryname = %s\n", bloque, directoryname);
-        return -ENOTDIR;
+        return -ENOENT;
     }
 
     printf("\t truncate dbg: filename = %s | directorio = %s \n", filename, directoryname);
@@ -965,18 +982,204 @@ static int ondisk_truncate(const char *path, off_t len)
     return 0;
 }
 
+int getTipoDirEntry(struct directorio *dir, char *filename) {
+    int identry, tipo_bloque = 0;
+    for (identry = 0; identry < CANT_DIR_ENTRIES; identry++) {
+        if (strcmp(filename, dir->directory_Entries[identry].nombre) == 0) {
+            tipo_bloque = dir->directory_Entries[identry].tipo_bloque;
+            break;
+        }
+    }
+
+    return tipo_bloque;
+}
+
+
+int readFCBDirectBlocks(struct file_control_block *file, off_t offset,
+                     char *buff, size_t *size)
+{
+    int readBytes = 0;
+    int bloque_pivote = offset / BLOCK_SIZE;
+    int offset_interno = offset % BLOCK_SIZE;
+
+
+    while (*size > 0 && (bloque_pivote < CANT_DIR_ENTRIES)) {
+        read_block(file->bloques_directos[bloque_pivote++], &buffer);
+
+        if (*size >= BLOCK_SIZE) {
+            memcpy(buff, buffer + offset_interno, BLOCK_SIZE - offset_interno);
+            readBytes += BLOCK_SIZE - offset_interno;
+            *size -= readBytes;
+        } else {
+            memcpy(buff, buffer + offset_interno, *size);
+            readBytes += *size;
+            *size = 0;
+        }
+    }
+
+    return readBytes;
+}
+
+int read_1lvl_IndirectBlocks(unsigned int bloque, off_t offset,
+                     char *buff, size_t *size)
+{
+    struct indirect_block indirectBlock;
+    memset(&indirectBlock, 0, BLOCK_SIZE);
+
+    read_block(bloque, &indirectBlock);
+
+    int readBytes = 0;
+    int bloque_pivote = offset / BLOCK_SIZE;
+    int offset_interno = offset % BLOCK_SIZE;
+
+
+    while (*size > 0 && (bloque_pivote < CANT_BLOQUES)) {
+        read_block(indirectBlock.bloques[bloque_pivote++], &buffer);
+
+        if (*size >= BLOCK_SIZE) {
+            memcpy(buff, buffer + offset_interno, BLOCK_SIZE - offset_interno);
+            readBytes += BLOCK_SIZE - offset_interno;
+            *size -= readBytes;
+        } else {
+            memcpy(buff, buffer + offset_interno, *size);
+            readBytes += *size;
+            *size = 0;
+        }
+    }
+
+    return readBytes;
+}
+
+int read_2lvl_IndirectBlock(unsigned int bloque, off_t offset,
+                            char *buff, size_t *size)
+{
+    struct indirect_block indirectBlock;
+    memset(&indirectBlock, 0, BLOCK_SIZE);
+
+    read_block(bloque, &indirectBlock);
+
+    int readBytes = 0;
+    int bloque_pivote = offset / BLOCK_SIZE;
+    off_t offset_interno = offset % (BLOCK_SIZE*CANT_BLOQUES);
+
+    while (*size >= 0 && (bloque_pivote < CANT_BLOQUES)) {
+        readBytes += read_1lvl_IndirectBlocks(indirectBlock.bloques[bloque_pivote], offset_interno, buff, size);
+    }
+
+    return readBytes;
+}
+
+int read_3lvl_IndirectBlock(unsigned int bloque, off_t offset,
+                            char *buff, size_t *size)
+{
+    struct indirect_block indirectBlock;
+    memset(&indirectBlock, 0, BLOCK_SIZE);
+
+    read_block(bloque, &indirectBlock);
+
+    int readBytes = 0;
+    int bloque_pivote = offset / BLOCK_SIZE;
+    off_t offset_interno = offset % (BLOCK_SIZE*CANT_BLOQUES*CANT_BLOQUES);
+
+    while (*size >= 0 && (bloque < CANT_BLOQUES)) {
+        readBytes += read_2lvl_IndirectBlock(indirectBlock.bloques[bloque_pivote], offset_interno, buff, size);
+    }
+
+    return readBytes;
+}
+
 /* read - read data from an open file.
  * should return exactly the number of bytes requested, except:
- *   - if offset >= len, return 0
- *   - on error, return <0
+ *   - if offset >= size, return 0
+ *   - on error, return < 0
  * Errors - path resolution, ENOENT, EISDIR, EACCES
  * EACCES - requires read permission to the file itself
  */
-static int ondisk_read(const char *path, char *buf, size_t len, off_t offset,
-                    struct fuse_file_info *fi)
+static int ondisk_read(const char *path, char *buff, size_t size,
+                       off_t offset, struct fuse_file_info *fi)
 {
-    return -EOPNOTSUPP;
+    if (offset >= size) {
+        printf("\t read DUMP: offset >= len!!\n");
+        return 0;
+    }
+
+    char *filename = getFilename(path);
+    char *directoryname = getDirectory(path);
+    int bloque = getBlock(directoryname);
+
+    if (bloque <= 0) {
+        printf("\t read DUMP: bloque = %d | directoryname = %s\n", bloque, directoryname);
+        return -ENOENT;
+    }
+
+    printf("\t read dbg: filename = %s | directorio = %s \n", filename, directoryname);
+
+    struct directorio dir;
+    read_block(bloque, &dir);
+
+    int bloque_modificar = searchFile(&dir, filename);
+    if (bloque_modificar == -ENOENT) {
+        printf("\t read DUMP: %s no existe en %s!!\n", filename, directoryname);
+        return -ENOENT;
+    }
+
+    if (getTipoDirEntry(&dir, filename) != ARCHIVO) {
+        printf("\t read DUMP: %s no es archivo!!\n", filename);
+        return -EISDIR;
+    }
+
+    struct file_control_block file;
+    read_block(bloque_modificar, &file);
+
+    if ((file.info.mode & S_IRUSR) == 0) {
+        printf("\t read DUMP: Usuario no tiene permisos de lectura en %s!!\n", filename);
+        return -EACCES;
+    }
+
+    int readBytes = 0;
+
+    if (offset < MAX_RANGE_FCB_DIRECT_BLOCKS) {
+        readBytes += readFCBDirectBlocks(&file, offset, buff, &size);
+
+        if (size > 0)
+            readBytes += read_1lvl_IndirectBlocks(file.bloque_una_indireccion, 0, buff, &size);
+
+        if (size > 0)
+            readBytes += read_2lvl_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size);
+
+        if (size >0)
+            readBytes += read_3lvl_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+
+    } else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
+        offset -= MAX_RANGE_FCB_DIRECT_BLOCKS;
+
+        readBytes += read_1lvl_IndirectBlocks(file.bloque_una_indireccion, offset, buff, &size);
+
+        if (size > 0)
+            readBytes += read_2lvl_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size);
+
+        if (size > 0)
+            readBytes += read_3lvl_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+    } else if (offset < MAX_RANGE_2LVL_INDIRECT_BLOCK) {
+        offset -= MAX_RANGE_1LVL_INDIRECT_BLOCK;
+
+        readBytes += read_2lvl_IndirectBlock(file.bloque_tres_indireccion, offset, buff, &size);
+
+        if (size > 0)
+            readBytes += read_3lvl_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+
+    } else if (offset < MAX_RANGE_3LVL_INDIRECT_BLOCK) {
+        offset -= MAX_RANGE_2LVL_INDIRECT_BLOCK;
+
+        readBytes += read_3lvl_IndirectBlock(file.bloque_tres_indireccion, offset, buff, &size);
+    }
+
+    return readBytes;
 }
+
+
+int writeFCBDirectBlocks(struct file_control_block *file, off_t offset,
+                         char *buff, size_t *size);
 
 /* write - write data to a file
  * It should return exactly the number of bytes requested, except on
@@ -984,7 +1187,7 @@ static int ondisk_read(const char *path, char *buf, size_t len, off_t offset,
  * Errors - path resolution, ENOENT, EISDIR, EACCES
  * EACCES - requires write permission to the file itself
  */
-static int ondisk_write(const char *path, const char *buf, size_t len,
+static int ondisk_write(const char *path, const char *buf, size_t size,
                      off_t offset, struct fuse_file_info *fi)
 {
     return -EOPNOTSUPP;
