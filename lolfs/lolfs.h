@@ -26,7 +26,7 @@ struct lolfs_path
 };
 
 char buffer[BLOCK_SIZE];
-struct super_bloque superBlock;
+struct Super_Block superBlock;
 struct lolfs_path lolfs;
 
 off_t BYTES_BLOQUES_DIRECTOS_FCB;

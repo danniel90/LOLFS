@@ -95,7 +95,7 @@ void mensaje()
     return -1;
 }
 
- unsigned int alocarBloque(int fd, struct super_bloque *superBlock)
+ unsigned int alocarBloque(int fd, struct Super_Block *superBlock)
  {
      unsigned int size_bloques = superBlock->size_bloques;
      unsigned int inicio_bitmap = superBlock->primerbloque_mapabits;
@@ -125,7 +125,7 @@ void mensaje()
          }
      }
 
-     return 0; // bloque 0 es utilizado por el super_bloque pro ende es imposible utilizarlo y es considerado cmomo error
+     return 0; // bloque 0 es utilizado por el Super_Block pro ende es imposible utilizarlo y es considerado cmomo error
  }
 
 int main(int argc, char **argv)
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
 
     /* Escribir superbloque */
 
-    struct super_bloque *sp = buffer;
+    struct Super_Block *sp = buffer;
     sp->magic_number = MAGIC;
     sp->size_bloques = BLOCK_SIZE;
     sp->total_bloques = numero_bloques;
@@ -240,7 +240,7 @@ int main(int argc, char **argv)
 
 
 
-    struct directorio *rootDir = buffer;
+    struct Directory *rootDir = buffer;
 
 
     uid_t uid;
