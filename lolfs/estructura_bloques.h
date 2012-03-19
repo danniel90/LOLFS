@@ -5,7 +5,7 @@
 #define MAGIC 0x101
 
 
-#define CANT_PADDING (BLOCK_SIZE - 28) / 4
+#define CANT_PADDING ((BLOCK_SIZE - 28) / 4)
 struct Super_Block
 {
     int magic_number;
@@ -40,7 +40,7 @@ struct inodo
 #define LIBRE               0
 #define ARCHIVO             1
 #define DIRECTORIO          2
-#define CANT_DIR_ENTRIES    (BLOCK_SIZE - 64) / 64
+#define CANT_DIR_ENTRIES    ((BLOCK_SIZE - 64) / 64)
 
 struct Directory
 {
@@ -50,7 +50,7 @@ struct Directory
     struct Directory_Entry directory_Entries[CANT_DIR_ENTRIES];
 };
 
-#define CANT_BLOQUES_DIRECTOS ((BLOCK_SIZE - 64) / sizeof(unsigned int))  - 3
+#define CANT_BLOQUES_DIRECTOS (((BLOCK_SIZE - 64) / sizeof(unsigned int))  - 3)
 
 struct file_control_block
 {
@@ -63,7 +63,7 @@ struct file_control_block
     unsigned int    bloque_tres_indireccion;
 };
 
-#define CANT_BLOQUES BLOCK_SIZE / 4
+#define CANT_BLOQUES (BLOCK_SIZE / 4)
 struct indirect_block
 {
     unsigned int bloques[CANT_BLOQUES];

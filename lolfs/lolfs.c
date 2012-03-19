@@ -1,5 +1,6 @@
 #include "lolfs.h"
 
+#include <stdbool.h>
 
 /* write_block, read_block:
  *  these are the functions you will use to access the disk
@@ -77,6 +78,22 @@ void initFileRanges()
     MAX_RANGE_1LVL_INDIRECT_BLOCK   = BYTES_BLOQUE_UNA_INDIRECCION + MAX_RANGE_FCB_DIRECT_BLOCKS;
     MAX_RANGE_2LVL_INDIRECT_BLOCK   = BYTES_BLOQUE_DOS_INDIRECCION + MAX_RANGE_1LVL_INDIRECT_BLOCK;
     MAX_RANGE_3LVL_INDIRECT_BLOCK   = BYTES_BLOQUE_TRES_INDIRECCION + MAX_RANGE_2LVL_INDIRECT_BLOCK;
+
+
+    printf("BLOCK_SIZE = \t\t\t%d\n", BLOCK_SIZE);
+    printf("CANT_BLOQUES = \t\t\t%d\n", CANT_BLOQUES);
+    printf("CANT_BLOQUES_DIRECTOS = \t%d\n\n", CANT_BLOQUES_DIRECTOS);
+
+    printf("BYTES_BLOQUES_DIRECTOS_FCB = \t%lld\n", BYTES_BLOQUES_DIRECTOS_FCB);
+    printf("BYTES_BLOQUES_DIRECTOS = \t%lld\n", BYTES_BLOQUES_DIRECTOS);
+    printf("BYTES_BLOQUE_UNA_INDIRECCION = \t%lld\n", BYTES_BLOQUE_UNA_INDIRECCION);
+    printf("BYTES_BLOQUE_DOS_INDIRECCION = \t%lld\n", BYTES_BLOQUE_DOS_INDIRECCION / 1024 / 1024 / 1024);
+    printf("BYTES_BLOQUE_TRES_INDIRECCION = %lld\n\n", BYTES_BLOQUE_TRES_INDIRECCION / 1024 / 1024 / 1024);
+
+    printf("MAX_RANGE_FCB_DIRECT_BLOCKS = \t%lld\n", MAX_RANGE_FCB_DIRECT_BLOCKS);
+    printf("MAX_RANGE_1LVL_INDIRECT_BLOCK = %lld\n", MAX_RANGE_1LVL_INDIRECT_BLOCK);
+    printf("MAX_RANGE_2LVL_INDIRECT_BLOCK = %lld\n", MAX_RANGE_2LVL_INDIRECT_BLOCK / 1024 / 1024 / 1024);
+    printf("MAX_RANGE_3LVL_INDIRECT_BLOCK = %lld\n", MAX_RANGE_3LVL_INDIRECT_BLOCK / 1024 / 1024 / 1024);
 }
 
  void setPath(const char *path)
@@ -192,7 +209,7 @@ char *getDirectory(const char *path)
 
 int setStat(struct stat* sb, void *entry)
 {
-    sb->st_blocks   = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? BLOCK_SIZE / 512 : ((unsigned)((struct file_control_block *) entry)->lenght) / BLOCK_SIZE / 512;
+    sb->st_blocks   = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? BLOCK_SIZE / 512 : ((unsigned)((struct file_control_block *) entry)->lenght) / 512;
     sb->st_nlink    = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? 2 : 1;
     sb->st_size     = ((struct inodo *)entry)->tipo_bloque == DIRECTORIO ? BLOCK_SIZE : ((struct file_control_block *) entry)->lenght;
     sb->st_uid      = ((struct inodo *)entry)->uid;
@@ -201,6 +218,7 @@ int setStat(struct stat* sb, void *entry)
     sb->st_ctime    = ((struct inodo *)entry)->fcreacion;
     sb->st_mtime    = ((struct inodo *)entry)->fmodificacion;
     sb->st_atime    = ((struct inodo *)entry)->facceso;
+
     return 0;
 }
 
@@ -1002,25 +1020,26 @@ int read_DirectBlocks(struct file_control_block *file, off_t offset,
     int bloque_pivote = offset / BLOCK_SIZE;
     off_t offset_interno = offset % BLOCK_SIZE;
 
-    printf("\t read_DirectBlocks dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
+    printf("\t read_DirectBlocks dbg: bloque_pivote = %d | offset_interno = %lld\n", bloque_pivote, offset_interno);
 
-    while (*size > 0 && (bloque_pivote < CANT_DIR_ENTRIES)) {
-        printf("\t read_DirectBlocks dbg: size = %d || bloque[pivote] = %d\n", *size, file->bloques_directos[bloque_pivote]);
+    while ((*size > 0) && (bloque_pivote < CANT_BLOQUES_DIRECTOS)) {
+        printf("\t read_DirectBlocks dbg: size = %d | pivote = %d | bloque[pivote] = %d | readBytes = %d\n", *size, bloque_pivote,file->bloques_directos[bloque_pivote], readBytes);
         if (file->bloques_directos[bloque_pivote] == 0)
             return readBytes;
 
         read_block(file->bloques_directos[bloque_pivote++], &buffer);
-        printf("\t read_DirectBlocks dbg: buffer = %s\n", buffer);
+        //printf("\t read_DirectBlocks dbg: buffer = %s\n", buffer);
 
         if (*size >= BLOCK_SIZE) {
-            memcpy(buff + readBytes, &buffer + offset_interno, BLOCK_SIZE - offset_interno);
-            readBytes += BLOCK_SIZE - offset_interno;
-            *size -= readBytes;
+            memcpy(buff + readBytes, buffer, BLOCK_SIZE);
+            readBytes += BLOCK_SIZE;
+            *size -= BLOCK_SIZE;
         } else {
-            memcpy(buff + readBytes, buffer + offset_interno, *size);
+            memcpy(buff + readBytes, buffer, *size);
             readBytes += *size;
             *size = 0;
         }
+        printf("\t read_DirectBlocks dbg: al fin de while size = %d\n", *size);
     }
 
     return readBytes;
@@ -1038,22 +1057,25 @@ int read_single_IndirectBlock(unsigned int bloque, off_t offset,
     int bloque_pivote = offset / BLOCK_SIZE;
     off_t offset_interno = offset % BLOCK_SIZE;
 
+    printf("\t read_single_IndirectBlock dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
 
     while (*size > 0 && (bloque_pivote < CANT_BLOQUES)) {
+        printf("\t read_single_IndirectBlock dbg: size = %d | pivote = %d | bloque[pivote] = %d | readBytes = %d\n", *size, bloque_pivote,indirectBlock.bloques[bloque_pivote], readBytes);
         if (indirectBlock.bloques[bloque_pivote] == 0)
             return readBytes;
 
         read_block(indirectBlock.bloques[bloque_pivote++], &buffer);
 
         if (*size >= BLOCK_SIZE) {
-            memcpy(buff + readBytes, buffer + offset_interno, BLOCK_SIZE - offset_interno);
-            readBytes += BLOCK_SIZE - offset_interno;
-            *size -= readBytes;
+            memcpy(buff + readBytes, buffer, BLOCK_SIZE);
+            readBytes += BLOCK_SIZE;
+            *size -= BLOCK_SIZE;
         } else {
-            memcpy(buff + readBytes, buffer + offset_interno, *size);
+            memcpy(buff + readBytes, buffer, *size);
             readBytes += *size;
             *size = 0;
         }
+        printf("\t read_single_IndirectBlock dbg: al fin de while size = %d\n", *size);
     }
 
     return readBytes;
@@ -1070,6 +1092,8 @@ int read_double_IndirectBlock(unsigned int bloque, off_t offset,
     int readBytes = 0;
     int bloque_pivote = offset / BLOCK_SIZE;
     off_t offset_interno = offset % (BLOCK_SIZE*CANT_BLOQUES);
+
+    printf("\t read_double_IndirectBlock dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
 
     while (*size >= 0 && (bloque_pivote < CANT_BLOQUES)) {
         if (indirectBlock.bloques[bloque_pivote] == 0)
@@ -1090,7 +1114,9 @@ int read_triple_IndirectBlock(unsigned int bloque, off_t offset,
 
     int readBytes = 0;
     int bloque_pivote = offset / BLOCK_SIZE;
-    off_t offset_interno = offset % (BLOCK_SIZE*CANT_BLOQUES*CANT_BLOQUES);
+    off_t offset_interno = offset % (BLOCK_SIZE * CANT_BLOQUES * CANT_BLOQUES);
+
+    printf("\t read_double_IndirectBlock dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
 
     while (*size >= 0 && (bloque < CANT_BLOQUES)) {
         if (indirectBlock.bloques == 0)
@@ -1113,11 +1139,6 @@ static int ondisk_read(const char *path, char *buff, size_t size,
                        off_t offset, struct fuse_file_info *fi)
 {
     printf("\t read dbg: offset =  %lld | size = %d\n", offset, size);
-
-    /*if (offset >= size) {
-        printf("\t read DUMP: offset >= len!!\n");
-        return 0;
-    }*/
 
     char *filename = getFilename(path);
     char *directoryname = getDirectory(path);
@@ -1158,9 +1179,9 @@ static int ondisk_read(const char *path, char *buff, size_t size,
         printf("\t read dbg: offset dentro de rango de Bloques Directos!!\n");
 
         readBytes += read_DirectBlocks(&file, offset, buff, &size);
-        printf("\t read dbg: readBytes = %d\n", readBytes);
+        printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
 
-        if (size > 0) {
+        /*if (size > 0) {
             readBytes += read_single_IndirectBlock(file.bloque_una_indireccion, 0, buff, &size);
 
             if (size > 0) {
@@ -1169,8 +1190,9 @@ static int ondisk_read(const char *path, char *buff, size_t size,
                 if (size >0)
                     readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
             }
-        }
-    } else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
+        }*/
+    }/* else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
+        printf("\t read dbg: offset dentro de rango de Bloque Indirecto!!\n");
         offset -= MAX_RANGE_FCB_DIRECT_BLOCKS;
 
         readBytes += read_single_IndirectBlock(file.bloque_una_indireccion, offset, buff, &size);
@@ -1182,6 +1204,7 @@ static int ondisk_read(const char *path, char *buff, size_t size,
                 readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
         }
     } else if (offset < MAX_RANGE_2LVL_INDIRECT_BLOCK) {
+        printf("\t read dbg: offset dentro de rango de Bloque Doble Indirecto!!\n");
         offset -= MAX_RANGE_1LVL_INDIRECT_BLOCK;
 
         readBytes += read_double_IndirectBlock(file.bloque_tres_indireccion, offset, buff, &size);
@@ -1190,10 +1213,11 @@ static int ondisk_read(const char *path, char *buff, size_t size,
             readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
 
     } else if (offset < MAX_RANGE_3LVL_INDIRECT_BLOCK) {
+        printf("\t read dbg: offset dentro de rango de Bloque Triple Indirecto!!\n");
         offset -= MAX_RANGE_2LVL_INDIRECT_BLOCK;
 
         readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, offset, buff, &size);
-    }
+    }*/
 
     return readBytes;
 }
@@ -1209,6 +1233,7 @@ int write_DirectBlocks(struct file_control_block *file, off_t offset,
     printf("\t write_DirectBlocks dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
 
     while (*size > 0 && (bloque_pivote < CANT_BLOQUES_DIRECTOS)) {
+        printf("\t write_DirectBlocks dbg: size = %d | pivote = %d | bloque[pivote] = %d | readBytes = %d\n", *size, bloque_pivote,file->bloques_directos[bloque_pivote], writtenBytes);
         if (file->bloques_directos[bloque_pivote] == 0) {
             file->bloques_directos[bloque_pivote] = alocarBloque();
             memset(&buffer, 0, BLOCK_SIZE);
@@ -1216,16 +1241,17 @@ int write_DirectBlocks(struct file_control_block *file, off_t offset,
             read_block(file->bloques_directos[bloque_pivote], &buffer);
 
         if (*size >= BLOCK_SIZE) {
-            memcpy(buffer + offset_interno, buff, BLOCK_SIZE - offset_interno);
-            writtenBytes += BLOCK_SIZE - offset_interno;
-            *size -= writtenBytes;
-            write_block(file->bloques_directos[bloque_pivote++], &buffer);
+            memcpy(buffer, buff + writtenBytes, BLOCK_SIZE);
+            writtenBytes += BLOCK_SIZE;
+            *size -= BLOCK_SIZE;
+
         } else {
-            memcpy(buffer + offset_interno, buff, *size);
+            memcpy(buffer, buff + writtenBytes, *size);
             writtenBytes += *size;
             *size = 0;
-            write_block(file->bloques_directos[bloque_pivote++], &buffer);
         }
+        printf("\t write_DirectBlocks dbg: al fin de while size = %d\n", *size);
+        write_block(file->bloques_directos[bloque_pivote++], &buffer);
     }
 
     file->lenght += writtenBytes;
@@ -1245,27 +1271,36 @@ int write_single_IndirectBlock(unsigned int bloque, off_t offset,
     int bloque_pivote = offset / BLOCK_SIZE;
     off_t offset_interno = offset % BLOCK_SIZE;
 
+    printf("\t write_single_IndirectBlock dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
+
+    bool extended = false;
+
     while (*size > 0 && (bloque_pivote < CANT_BLOQUES)) {
+        printf("\t write_single_IndirectBlock dbg: size = %d | pivote = %d | bloque[pivote] = %d | readBytes = %d\n", *size, bloque_pivote, ind_block.bloques[bloque_pivote], writtenBytes);
         if (ind_block.bloques[bloque_pivote] == 0) {
             ind_block.bloques[bloque_pivote] = alocarBloque();
             memset(&buffer, 0, BLOCK_SIZE);
+
+            if (!extended)
+                extended = true;
         } else
             read_block(ind_block.bloques[bloque_pivote], &buffer);
 
         if (*size >= BLOCK_SIZE) {
-            memcpy(buffer + offset_interno, buff, BLOCK_SIZE - offset_interno);
-            writtenBytes += BLOCK_SIZE - offset_interno;
-            *size -= writtenBytes;
-            write_block(ind_block.bloques[bloque_pivote++], &buffer);
+            memcpy(buffer, buff + writtenBytes, BLOCK_SIZE);
+            writtenBytes += BLOCK_SIZE;
+            *size -= BLOCK_SIZE;
         } else {
-            memcpy(buffer + offset_interno, buff, *size);
+            memcpy(buffer, buff + writtenBytes, *size);
             writtenBytes += *size;
             *size = 0;
-            write_block(ind_block.bloques[bloque_pivote++], &buffer);
         }
+        printf("\t write_DirectBlocks dbg: al fin de while size = %d\n", *size);
+        write_block(ind_block.bloques[bloque_pivote++], &buffer);
     }
 
-    write_block(bloque, &ind_block);
+    if (extended)
+        write_block(bloque, &ind_block);
 
     return writtenBytes;
 }
@@ -1282,14 +1317,23 @@ int write_double_IndirectBlock(unsigned int bloque, off_t offset,
     int bloque_pivote = offset / BLOCK_SIZE;
     off_t offset_interno = offset % BLOCK_SIZE;
 
+    printf("\t write_double_IndirectBlock dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
+
+    bool extended = false;
+
     while (*size > 0 && (bloque_pivote < CANT_BLOQUES)) {
-        if (double_ind_block.bloques[bloque_pivote] == 0)
+        if (double_ind_block.bloques[bloque_pivote] == 0) {
             double_ind_block.bloques[bloque_pivote] = alocarBloque();
+
+            if (!extended)
+                extended = true;
+        }
 
         writtenBytes += write_single_IndirectBlock(double_ind_block.bloques[bloque_pivote++], offset_interno, buff, size);
     }
 
-    write_block(bloque, &double_ind_block);
+    if (extended)
+        write_block(bloque, &double_ind_block);
 
     return writtenBytes;
 }
@@ -1306,14 +1350,23 @@ int write_triple_IndirectBlock(unsigned int bloque, off_t offset,
     int bloque_pivote = offset / BLOCK_SIZE;
     off_t offset_interno = offset % BLOCK_SIZE;
 
+    printf("\t write_triple_IndirectBlock dbg: bloque_pivote = %d || offset_interno = %lld\n", bloque_pivote, offset_interno);
+
+    bool extended = false;
+
     while (*size > 0 && (bloque_pivote < CANT_BLOQUES)) {
-        if (triple_ind_block.bloques[bloque_pivote] == 0)
+        if (triple_ind_block.bloques[bloque_pivote] == 0) {
             triple_ind_block.bloques[bloque_pivote] = alocarBloque();
+
+            if (!extended)
+                extended = true;
+        }
 
         writtenBytes += write_double_IndirectBlock(triple_ind_block.bloques[bloque_pivote++], offset_interno, buff, size);
     }
 
-    write_block(bloque, &triple_ind_block);
+    if (extended)
+        write_block(bloque, &triple_ind_block);
 
     return writtenBytes;
 }
@@ -1327,12 +1380,7 @@ int write_triple_IndirectBlock(unsigned int bloque, off_t offset,
 static int ondisk_write(const char *path, const char *buff, size_t size,
                      off_t offset, struct fuse_file_info *fi)
 {
-    printf("\t write dbg: buff = %s | offset =  %lld | size = %d\n", buff, offset, size);
-
-    /*if (offset > size) {
-        printf("\t write DUMP: offset = %lld  >= size = %d!!\n", offset, size);
-        return 0;
-    }*/
+    printf("\t write dbg: offset =  %lld | size = %d\n", offset, size);
 
     char *filename = getFilename(path);
     char *directoryname = getDirectory(path);
@@ -1378,12 +1426,16 @@ static int ondisk_write(const char *path, const char *buff, size_t size,
 
         if (size > 0) {
             writtenBytes += write_single_IndirectBlock(file.bloque_una_indireccion, 0, buff, &size);
+            printf("\t write dbg: bloques escritos %d!!\n", writtenBytes);
 
             if (size > 0) {
                 writtenBytes += write_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size);
+                printf("\t write dbg: bloques escritos %d!!\n", writtenBytes);
 
-                if (size >0)
+                if (size > 0) {
                     writtenBytes += write_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+                    printf("\t write dbg: bloques escritos %d!!\n", writtenBytes);
+                }
             }
         }
     } else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
@@ -1400,7 +1452,7 @@ static int ondisk_write(const char *path, const char *buff, size_t size,
                 writtenBytes += write_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
         }
     } else if (offset < MAX_RANGE_2LVL_INDIRECT_BLOCK) {
-        printf("\t write dbg: offset dentro de rango de Bloque Doblemente Indirecto!!\n");
+        printf("\t write dbg: offset dentro de rango de Bloque Doble Indirecto!!\n");
 
         offset -= MAX_RANGE_1LVL_INDIRECT_BLOCK;
 
@@ -1410,7 +1462,7 @@ static int ondisk_write(const char *path, const char *buff, size_t size,
             writtenBytes += write_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
 
     } else if (offset < MAX_RANGE_3LVL_INDIRECT_BLOCK) {
-        printf("\t write dbg: offset dentro de rango de Bloque Triplemente Indirecto!!\n");
+        printf("\t write dbg: offset dentro de rango de Bloque Triple Indirecto!!\n");
 
         offset -= MAX_RANGE_2LVL_INDIRECT_BLOCK;
 
