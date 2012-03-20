@@ -500,7 +500,7 @@ static int hw4_opt_proc(void *data, const char *arg, int key,
      */
     if (key == FUSE_OPT_KEY_NONOPT && need_img && !hw4_data.img_file) {
     hw4_data.img_file = strdup(arg);
-    if ((hw4_data.img_fd = open(arg, O_RDWR | O_SYNC)) < 0) {
+    if ((hw4_data.img_fd = open(arg, O_RDWR)) < 0) {
         printf("cannot open image file '%s': %s\n", arg, strerror(errno));
         return -1;
     }
