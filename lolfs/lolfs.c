@@ -967,7 +967,7 @@ int truncate_DirectBlocks(struct file_control_block *file, off_t offset)
     return truncatedBytes;
 }
 
-int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset, unsigned int bloque)
+int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset, unsigned int bloque, bool starting)
 {
     struct indirect_block ind_block;
     memset(&ind_block, 0, BLOCK_SIZE);
@@ -977,12 +977,16 @@ int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset,
     int bloque_pivote = (file->lenght / BLOCK_SIZE) % (CANT_BLOQUES);
     int truncatedBytes = 0;
 
-    printf("\t truncate_DirectBlocks dbg: bloque_pivote = %d\n", bloque_pivote);
 
     if (offset > file->lenght) {
-        printf("\t truncate_DirectBlocks dbg: offset = %lld > file->lenght = %lld\n", offset, file->lenght);
-        bloque_pivote++;
+        if (starting)
+            bloque_pivote = 0;
+        else
+            bloque_pivote++;
+        printf("\t truncate_single_IndirectBlock dbg: offset = %lld > file->lenght = %lld\n", offset, file->lenght);
+        printf("\t truncate_single_IndirectBlock dbg: bloque_pivote = %d\n", bloque_pivote);
         while (file->lenght < offset && (bloque_pivote < CANT_BLOQUES)) {
+            printf("\t truncate_single_IndirectBlock dbg: offset = %lld | file->lenght = %lld | bloque_pivote = %d\n", offset, file->lenght, bloque_pivote);
             if ((offset - file->lenght) >= BLOCK_SIZE) {
                 ind_block.bloques[bloque_pivote++] = alocarBloque();
                 superBlock.bloques_libres--;
@@ -994,7 +998,10 @@ int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset,
             }
         }
     } else {
-        printf("\t truncate_DirectBlocks dbg: offset = %lld < file->lenght = %lld\n", offset, file->lenght);
+        if (bloque_pivote == 0)
+            bloque_pivote = ((file->lenght - MAX_RANGE_FCB_DIRECT_BLOCKS) / BLOCK_SIZE) % (CANT_BLOQUES);
+        printf("\t truncate_single_IndirectBlock dbg: bloque_pivote = %d\n", bloque_pivote);
+        printf("\t truncate_single_IndirectBlock dbg: offset = %lld < file->lenght = %lld\n", offset, file->lenght);
         while (file->lenght > offset && (bloque_pivote >= 0)) {
             if ((file->lenght - offset) >= BLOCK_SIZE) {
                 liberarBloque(file->bloques_directos[bloque_pivote--]);
@@ -1002,7 +1009,7 @@ int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset,
                 file->lenght -= BLOCK_SIZE;
                 truncatedBytes += BLOCK_SIZE;
             } else {
-                printf("\t truncate_DirectBlocks dbg: file->lenght = %lld - offset = %lld := %lld\n", file->lenght, offset, file->lenght - offset);
+                printf("\t truncate_IndirectBlock dbg: file->lenght = %lld - offset = %lld := %lld\n", file->lenght, offset, file->lenght - offset);
                 truncatedBytes += file->lenght - offset;
                 file->lenght -= file->lenght - offset;
             }
@@ -1014,7 +1021,7 @@ int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset,
     return truncatedBytes;
 }
 
-int truncate_double_IndirectBlock(struct file_control_block *file, off_t offset, unsigned int bloque)
+int truncate_double_IndirectBlock(struct file_control_block *file, off_t offset, unsigned int bloque, bool starting)
 {
     struct indirect_block double_ind_block;
     memset(&double_ind_block, 0, BLOCK_SIZE);
@@ -1024,32 +1031,42 @@ int truncate_double_IndirectBlock(struct file_control_block *file, off_t offset,
     int bloque_pivote = (file->lenght / (BLOCK_SIZE * CANT_BLOQUES));
     int truncatedBytes = 0;
 
+
     if (offset > file->lenght) {
-        bloque_pivote++;
+        if (starting)
+            bloque_pivote = 0;
+        else
+            bloque_pivote++;
         while (file->lenght < offset && (bloque_pivote < CANT_BLOQUES)) {
             if ((offset - file->lenght) >= (BLOCK_SIZE * CANT_BLOQUES)) {
                 double_ind_block.bloques[bloque_pivote] = alocarBloque();
                 superBlock.bloques_libres--;
 
-                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote++]);
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote++], starting);
+                if (starting)
+                    starting = false;
                 //file->lenght -= BLOCK_SIZE;
                 //truncatedBytes += BLOCK_SIZE;
             } else {
-                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote++]);
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote++], starting);
+                if (starting)
+                    starting = false;
                 file->lenght += offset - file->lenght;
                 truncatedBytes += offset - file->lenght;
             }
         }
     } else {
-        while (file->lenght > offset && (bloque_pivote > 0)) {
+        if (bloque_pivote == 0)
+            bloque_pivote = ((file->lenght - MAX_RANGE_1LVL_INDIRECT_BLOCK) / BLOCK_SIZE) % (CANT_BLOQUES);
+        while (file->lenght > offset && (bloque_pivote >= 0)) {
             if ((file->lenght - offset) >= (BLOCK_SIZE * CANT_BLOQUES)) {
-                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote]);
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote], false);
                 liberarBloque(double_ind_block.bloques[bloque_pivote--]);
                 superBlock.bloques_libres++;
                 //file->lenght -= BLOCK_SIZE;
                 //truncatedBytes += BLOCK_SIZE;
             } else {
-                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote--]);
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote--], false);
                 file->lenght -= file->lenght - offset;
                 truncatedBytes += file->lenght - offset;
             }
@@ -1110,45 +1127,65 @@ static int ondisk_truncate(const char *path, off_t offset)
 
     int truncatedBytes = 0;
 
-    if (offset < MAX_RANGE_FCB_DIRECT_BLOCKS) {
-        printf("\t truncate dbg: offset dentro de rango de Bloques Directos!!\n");
+    if (file.lenght < MAX_RANGE_FCB_DIRECT_BLOCKS) {
+        printf("\t truncate dbg: file.lenght dentro de rango de Bloques Directos!!\n");
 
         truncatedBytes += truncate_DirectBlocks(&file, offset);
         printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
 
-        if (file.lenght > offset || file.lenght < offset) {
-            truncatedBytes += truncate_single_IndirectBlock(&file, offset, file.bloque_una_indireccion);
+        if (file.lenght < offset) {
+            if (file.bloque_una_indireccion == 0)
+                file.bloque_una_indireccion = alocarBloque();
+            printf("\t truncate dbg: file.bloque_una_indireccion = %u\n", file.bloque_una_indireccion);
+            truncatedBytes += truncate_single_IndirectBlock(&file, offset, file.bloque_una_indireccion, true);
             printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
 
-            if (file.lenght > offset || file.lenght < offset) {
-                truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion); //read_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size, readBytes);
+            if (file.lenght < offset) {
+                if (file.bloque_dos_indireccion == 0)
+                    file.bloque_dos_indireccion = alocarBloque();
+                printf("\t truncate dbg: file.bloque_dos_indireccion = %u\n", file.bloque_dos_indireccion);
+                truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion, true);
                 printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
 
-                if (file.lenght > offset || file.lenght < offset) {
+                if (file.lenght < offset) {
+                    //if (file.bloque_tres_indireccion == 0)
                     //truncatedBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
                     //printf("\t truncate dbg: truncatedBytes = %d | size = %d\n", truncatedBytes, size);
                 }
             }
         }
-    } else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
-        printf("\t truncate dbg: offset dentro de rango de Bloque Indirecto!!\n");
+    } else if (file.lenght < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
+        printf("\t truncate dbg: file.lenght dentro de rango de Bloque Indirecto!!\n");
+        if (file.bloque_una_indireccion == 0)
+            file.bloque_una_indireccion = alocarBloque();
+        printf("\t truncate dbg: file.bloque_una_indireccion = %u\n", file.bloque_una_indireccion);
 
-        truncatedBytes += truncate_single_IndirectBlock(&file, offset, file.bloque_una_indireccion);
+        truncatedBytes += truncate_single_IndirectBlock(&file, offset, file.bloque_una_indireccion, false);
         printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
 
-        if (file.lenght > offset || file.lenght < offset) {
-            truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion); //read_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size, readBytes);
+        if (file.lenght < offset) {
+            if (file.bloque_dos_indireccion == 0)
+                file.bloque_dos_indireccion = alocarBloque();
+            printf("\t truncate dbg: file.bloque_dos_indireccion = %u\n", file.bloque_dos_indireccion);
+
+            truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion, true);
             printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
 
             if (file.lenght > offset || file.lenght < offset) {
                     //truncatedBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
                     //printf("\t truncate dbg: truncatedBytes = %d | size = %d\n", truncatedBytes, size);
             }
+        } else {
+            truncatedBytes += truncate_DirectBlocks(&file, offset);
+            printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
         }
-    } else if (offset < MAX_RANGE_2LVL_INDIRECT_BLOCK) {
-        printf("\t truncate dbg: offset dentro de rango de Bloque doble Indirecto!!\n");
+    } else if (file.lenght < MAX_RANGE_2LVL_INDIRECT_BLOCK) {
+        printf("\t truncate dbg: file.lenght dentro de rango de Bloque doble Indirecto!!\n");
+        if (file.bloque_dos_indireccion == 0)
+            file.bloque_dos_indireccion = alocarBloque();
+        printf("\t truncate dbg: file.bloque_una_indireccion = %u\n", file.bloque_una_indireccion);
 
-        truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion); //read_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size, readBytes);
+        truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion, false);
         printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %lld\n", truncatedBytes, offset, file.lenght);
 
         if (file.lenght > offset || file.lenght < offset) {
@@ -1612,8 +1649,7 @@ static int ondisk_write(const char *path, const char *buff, size_t size,
         return -EACCES;
     }
 
-    int writtenBytes = 0;
-    off_t offset2 = offset;
+    int writtenBytes = 0;    
 
     if (offset < MAX_RANGE_FCB_DIRECT_BLOCKS) {
         printf("\t write dbg: offset dentro de rango de Bloques Directos!!\n");
