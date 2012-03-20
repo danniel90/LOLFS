@@ -45,22 +45,20 @@ unsigned int alocarBloque()
             }
         }
     }
-    return 0; // bloque 0 es utilizado por el Super_Block pro ende es imposible utilizarlo y es considerado cmomo error
+    return 0; // bloque 0 es utilizado por el Super_Block por ende es imposible utilizarlo y es considerado como error
 }
 
 void liberarBloque(unsigned int bloque)
 {
-    unsigned int size_bloques   = superBlock.sizebloques_mapabits;
-    unsigned int size_bitmap    = superBlock.sizebloques_mapabits;
-
-    unsigned int queBloque  = (bloque / (8 * size_bitmap));
-    unsigned int tmp        = (queBloque % (8 * size_bloques));
+    unsigned int queBloque  = (bloque / (8 * BLOCK_SIZE * superBlock.sizebloques_mapabits));
+    unsigned int tmp        = (bloque % (8 * BLOCK_SIZE));
     unsigned int queByte    = tmp / 8;
     unsigned int queBit     = tmp % 8;
 
     read_block(queBloque, buffer);
     buffer[queByte] |= (1 << queBit);
     write_block(queBloque, buffer);
+    printf("\t\t\t liberarBloque dbg: bloque = %u | queBloque = %u | queByte = %u | queBit = %u!!\n", bloque, queBloque, queByte, queBit);
 }
 
 
@@ -652,7 +650,7 @@ static int ondisk_unlink(const char *path)
     return 0;
 }
 
-int recursive_rmdir(int bloque, char *filename)
+/*int recursive_rmdir(int bloque, char *filename)
 {
     read_block(bloque, &buffer);
 
@@ -677,7 +675,7 @@ int recursive_rmdir(int bloque, char *filename)
     }
 
     return 0;
-}
+}*/
 
 /* rmdir - remove a directory
  *  Errors - path resolution, EACCES, ENOENT, ENOTDIR, ENOTEMPTY
@@ -717,6 +715,7 @@ static int ondisk_rmdir(const char *path)
     for (identry = 0; identry < CANT_DIR_ENTRIES; identry++){
         if (dir.directory_Entries[identry].tipo_bloque == LIBRE)
             continue;
+
         if (strcmp(filename, dir.directory_Entries[identry].nombre) == 0) {
             dir.directory_Entries[identry].tipo_bloque = LIBRE;
             break;
@@ -727,10 +726,12 @@ static int ondisk_rmdir(const char *path)
     printf("\t rmdir dbg: excribiendo %s\n", directoryname);
     write_block(bloque, &dir);
 
-    int rec = recursive_rmdir(bloque_liberar, filename);
+    /*int rec = recursive_rmdir(bloque_liberar, filename);
 
     if (rec < 0)
-        return rec;
+        return rec;*/
+    liberarBloque(bloque_liberar);
+    superBlock.bloques_libres++;
 
     printf("\t rmdir dbg: escribiendo super bloque \n");
     write_block(0, &superBlock);
@@ -924,19 +925,149 @@ int ondisk_utime(const char *path, struct utimbuf *ut)
     return 0;
 }
 
+int truncate_DirectBlocks(struct file_control_block *file, off_t offset)
+{
+    int bloque_pivote = file->lenght / BLOCK_SIZE;
+    int truncatedBytes = 0;
+
+    printf("\t truncate_DirectBlocks dbg: bloque_pivote = %d\n", bloque_pivote);
+
+    if (offset > file->lenght) {
+        printf("\t truncate_DirectBlocks dbg: offset = %lld > file->lenght = %u\n", offset, file->lenght);
+        bloque_pivote++;
+        while (file->lenght < offset && (bloque_pivote < CANT_BLOQUES_DIRECTOS)) {
+            printf("\t truncate_DirectBlocks dbg: offset = %lld | file->lenght = %u | bloque_pivote = %d\n", offset, file->lenght, bloque_pivote);
+            if ((offset - file->lenght) >= BLOCK_SIZE) {
+                file->bloques_directos[bloque_pivote++] = alocarBloque();
+                superBlock.bloques_libres--;
+                file->lenght += BLOCK_SIZE;
+                truncatedBytes += BLOCK_SIZE;
+            } else {
+                truncatedBytes += offset - file->lenght;
+                file->lenght += offset - file->lenght;                
+            }
+        }
+    } else {
+        printf("\t truncate_DirectBlocks dbg: offset = %lld < file->lenght = %u\n", offset, file->lenght);
+        while (file->lenght > offset && (bloque_pivote >= 0)) {
+            printf("\t truncate_DirectBlocks dbg: offset = %lld | file->lenght = %u | bloque_pivote = %d\n", offset, file->lenght, bloque_pivote);
+            if ((file->lenght - offset) >= BLOCK_SIZE) {
+                liberarBloque(file->bloques_directos[bloque_pivote--]);
+                superBlock.bloques_libres++;
+                file->lenght -= BLOCK_SIZE;
+                truncatedBytes += BLOCK_SIZE;
+            } else {
+                printf("\t truncate_DirectBlocks dbg: file->lenght = %u - offset = %lld := %lld\n", file->lenght, offset, file->lenght - offset);
+                truncatedBytes += file->lenght - offset;
+                file->lenght -= file->lenght - offset;                
+            }
+        }
+    }
+
+    return truncatedBytes;
+}
+
+int truncate_single_IndirectBlock(struct file_control_block *file, off_t offset, unsigned int bloque)
+{
+    struct indirect_block ind_block;
+    memset(&ind_block, 0, BLOCK_SIZE);
+
+    read_block(bloque, &ind_block);
+
+    int bloque_pivote = (file->lenght / BLOCK_SIZE) % (CANT_BLOQUES);
+    int truncatedBytes = 0;
+
+    printf("\t truncate_DirectBlocks dbg: bloque_pivote = %d\n", bloque_pivote);
+
+    if (offset > file->lenght) {
+        printf("\t truncate_DirectBlocks dbg: offset = %lld > file->lenght = %u\n", offset, file->lenght);
+        bloque_pivote++;
+        while (file->lenght < offset && (bloque_pivote < CANT_BLOQUES)) {
+            if ((offset - file->lenght) >= BLOCK_SIZE) {
+                ind_block.bloques[bloque_pivote++] = alocarBloque();
+                superBlock.bloques_libres--;
+                file->lenght += BLOCK_SIZE;
+                truncatedBytes += BLOCK_SIZE;
+            } else {
+                truncatedBytes += offset - file->lenght;
+                file->lenght += offset - file->lenght;                
+            }
+        }
+    } else {
+        printf("\t truncate_DirectBlocks dbg: offset = %lld < file->lenght = %u\n", offset, file->lenght);
+        while (file->lenght > offset && (bloque_pivote >= 0)) {
+            if ((file->lenght - offset) >= BLOCK_SIZE) {
+                liberarBloque(file->bloques_directos[bloque_pivote--]);
+                superBlock.bloques_libres++;
+                file->lenght -= BLOCK_SIZE;
+                truncatedBytes += BLOCK_SIZE;
+            } else {
+                printf("\t truncate_DirectBlocks dbg: file->lenght = %u - offset = %lld := %lld\n", file->lenght, offset, file->lenght - offset);
+                truncatedBytes += file->lenght - offset;
+                file->lenght -= file->lenght - offset;
+            }
+        }
+    }
+
+    write_block(bloque, &ind_block);
+
+    return truncatedBytes;
+}
+
+int truncate_double_IndirectBlock(struct file_control_block *file, off_t offset, unsigned int bloque)
+{
+    struct indirect_block double_ind_block;
+    memset(&double_ind_block, 0, BLOCK_SIZE);
+
+    read_block(bloque, &double_ind_block);
+
+    int bloque_pivote = (file->lenght / (BLOCK_SIZE * CANT_BLOQUES));
+    int truncatedBytes = 0;
+
+    if (offset > file->lenght) {
+        bloque_pivote++;
+        while (file->lenght < offset && (bloque_pivote < CANT_BLOQUES)) {
+            if ((offset - file->lenght) >= (BLOCK_SIZE * CANT_BLOQUES)) {
+                double_ind_block.bloques[bloque_pivote] = alocarBloque();
+                superBlock.bloques_libres--;
+
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote++]);
+                //file->lenght -= BLOCK_SIZE;
+                //truncatedBytes += BLOCK_SIZE;
+            } else {
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote++]);
+                file->lenght += offset - file->lenght;
+                truncatedBytes += offset - file->lenght;
+            }
+        }
+    } else {
+        while (file->lenght > offset && (bloque_pivote > 0)) {
+            if ((file->lenght - offset) >= (BLOCK_SIZE * CANT_BLOQUES)) {
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote]);
+                liberarBloque(double_ind_block.bloques[bloque_pivote--]);
+                superBlock.bloques_libres++;
+                //file->lenght -= BLOCK_SIZE;
+                //truncatedBytes += BLOCK_SIZE;
+            } else {
+                truncatedBytes += truncate_single_IndirectBlock(file, offset, double_ind_block.bloques[bloque_pivote--]);
+                file->lenght -= file->lenght - offset;
+                truncatedBytes += file->lenght - offset;
+            }
+        }
+    }
+
+    write_block(bloque_pivote, &double_ind_block);
+
+    return truncatedBytes;
+}
+
 /* truncate - truncate file to exactly 'len' bytes
  * Errors - path resolution, EACCES, ENOENT, EISDIR
  * EACCES - requires write permission to the file itself.
  */
-static int ondisk_truncate(const char *path, off_t len)
+static int ondisk_truncate(const char *path, off_t offset)
 {
-    /* you can cheat by only implementing this for the case of len==0,
-     * and an error otherwise.
-     */
-    if (len != 0)
-        return -EINVAL;		/* invalid argument */
-
-    printf("\t truncate dbg: path = %s\n", path);
+    printf("\t truncate dbg: path = %s | offset = %lld\n", path, offset);
 
     char *filename = getFilename(path);
     char *directoryname = getDirectory(path);
@@ -977,35 +1108,56 @@ static int ondisk_truncate(const char *path, off_t len)
     struct file_control_block file;
     read_block(bloque_modificar, &file);
 
-    //logica
-    //bloques directos
-    printf("\t truncate dbg: liberando bloques directos\n");
-    int x;
-    for (x = 0; x < CANT_BLOQUES_DIRECTOS; x++){
-        if (file.bloques_directos[x] == 0)
-            break;
+    int truncatedBytes = 0;
 
-        liberarBloque(file.bloques_directos[x]);
-        superBlock.bloques_libres++;
-        file.bloques_directos[x] = 0;
+    if (offset < MAX_RANGE_FCB_DIRECT_BLOCKS) {
+        printf("\t truncate dbg: offset dentro de rango de Bloques Directos!!\n");
+
+        truncatedBytes += truncate_DirectBlocks(&file, offset);
+        printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %u\n", truncatedBytes, offset, file.lenght);
+
+        if (file.lenght > offset || file.lenght < offset) {
+            truncatedBytes += truncate_single_IndirectBlock(&file, offset, file.bloque_una_indireccion);
+            printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %u\n", truncatedBytes, offset, file.lenght);
+
+            if (file.lenght > offset || file.lenght < offset) {
+                truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion); //read_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size, readBytes);
+                printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %u\n", truncatedBytes, offset, file.lenght);
+
+                if (file.lenght > offset || file.lenght < offset) {
+                    //truncatedBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
+                    //printf("\t truncate dbg: truncatedBytes = %d | size = %d\n", truncatedBytes, size);
+                }
+            }
+        }
+    } else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
+        printf("\t truncate dbg: offset dentro de rango de Bloque Indirecto!!\n");
+
+        truncatedBytes += truncate_single_IndirectBlock(&file, offset, file.bloque_una_indireccion);
+        printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %u\n", truncatedBytes, offset, file.lenght);
+
+        if (file.lenght > offset || file.lenght < offset) {
+            truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion); //read_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size, readBytes);
+            printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %u\n", truncatedBytes, offset, file.lenght);
+
+            if (file.lenght > offset || file.lenght < offset) {
+                    //truncatedBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
+                    //printf("\t truncate dbg: truncatedBytes = %d | size = %d\n", truncatedBytes, size);
+            }
+        }
+    } else if (offset < MAX_RANGE_2LVL_INDIRECT_BLOCK) {
+        printf("\t truncate dbg: offset dentro de rango de Bloque doble Indirecto!!\n");
+
+        truncatedBytes +=truncate_double_IndirectBlock(&file, offset, file.bloque_dos_indireccion); //read_double_IndirectBlock(file.bloque_dos_indireccion, 0, buff, &size, readBytes);
+        printf("\t truncate dbg: truncatedBytes = %d | offset = %lld | file.lenght = %u\n", truncatedBytes, offset, file.lenght);
+
+        if (file.lenght > offset || file.lenght < offset) {
+            //truncatedBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
+            //printf("\t truncate dbg: truncatedBytes = %d | size = %d\n", truncatedBytes, size);
+        }
+    } else if (offset < MAX_RANGE_3LVL_INDIRECT_BLOCK) {
+
     }
-
-    //bloques indirectos 1er nivel
-    printf("\t truncate dbg: liberando bloques de 1 nivel de indireccion\n");
-    free_indirect_block(file.bloque_una_indireccion);
-    file.bloque_una_indireccion = 0;
-
-    //bloques indirectos 2do nivel
-    printf("\t truncate dbg: liberando bloques de 2 niveles de indireccion\n");
-    free_double_indirect_block(file.bloque_dos_indireccion);
-    file.bloque_dos_indireccion = 0;
-
-    //bloques indirectos 3er nivel
-    printf("\t truncate dbg: liberando bloques de 3 niveles de indireccion\n");
-    free_triple_indirect_block(file.bloque_tres_indireccion);
-    file.bloque_tres_indireccion = 0;
-
-    file.lenght = 0;
 
     write_block(bloque_modificar, &file);
 
@@ -1124,7 +1276,7 @@ int read_double_IndirectBlock(unsigned int bloque, off_t offset,
 }
 
 int read_triple_IndirectBlock(unsigned int bloque, off_t offset,
-                            char *buff, size_t *size)
+                            char *buff, size_t *size, off_t buff_offset)
 {
     struct indirect_block indirectBlock;
     memset(&indirectBlock, 0, BLOCK_SIZE);
@@ -1140,7 +1292,9 @@ int read_triple_IndirectBlock(unsigned int bloque, off_t offset,
         if (indirectBlock.bloques == 0)
             return readBytes;
 
-        readBytes += read_double_IndirectBlock(indirectBlock.bloques[bloque_pivote++], offset, buff, size, 0);
+        readBytes += read_double_IndirectBlock(indirectBlock.bloques[bloque_pivote++], offset, buff, size, buff_offset);
+        offset = 0;
+        buff_offset = readBytes;
     }
 
     return readBytes;
@@ -1209,7 +1363,7 @@ static int ondisk_read(const char *path, char *buff, size_t size,
                 printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
 
                 if (size > 0) {
-                    readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+                    readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
                     printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
                 }
             }
@@ -1225,7 +1379,7 @@ static int ondisk_read(const char *path, char *buff, size_t size,
             printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
 
             if (size > 0) {
-                readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+                readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
                 printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
             }
         }
@@ -1236,7 +1390,7 @@ static int ondisk_read(const char *path, char *buff, size_t size,
         readBytes += read_double_IndirectBlock(file.bloque_dos_indireccion, offset, buff, &size, readBytes);
 
         if (size > 0) {
-            readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size);
+            readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, 0, buff, &size, readBytes);
             printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
         }
 
@@ -1244,7 +1398,7 @@ static int ondisk_read(const char *path, char *buff, size_t size,
         printf("\t read dbg: offset dentro de rango de Bloque Triple Indirecto!!\n");
         offset -= MAX_RANGE_2LVL_INDIRECT_BLOCK;
 
-        readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, offset, buff, &size);
+        readBytes += read_triple_IndirectBlock(file.bloque_tres_indireccion, offset, buff, &size, readBytes);
         printf("\t read dbg: readBytes = %d | size = %d\n", readBytes, size);
     }
 
@@ -1256,10 +1410,9 @@ int write_DirectBlocks(struct file_control_block *file, off_t offset,
                        const char *buff, size_t *size)
 {    
     int writtenBytes = 0;
-    int bloque_pivote = offset / BLOCK_SIZE;    
+    int bloque_pivote = offset / BLOCK_SIZE;
 
     printf("\t write_DirectBlocks dbg: bloque_pivote = %d\n", bloque_pivote);
-
 
     while (*size > 0 && (bloque_pivote < CANT_BLOQUES_DIRECTOS)) {
         printf("\t write_DirectBlocks dbg: size = %d | pivote = %d | bloque[pivote] = %u | writtenBytes = %d\n", *size, bloque_pivote,file->bloques_directos[bloque_pivote], writtenBytes);
@@ -1405,6 +1558,7 @@ int write_triple_IndirectBlock(unsigned int bloque, off_t offset,
         }
 
         writtenBytes += write_double_IndirectBlock(triple_ind_block.bloques[bloque_pivote++], offset, buff, size);
+        offset = 0;
     }
 
     if (extended)
@@ -1459,12 +1613,14 @@ static int ondisk_write(const char *path, const char *buff, size_t size,
     }
 
     int writtenBytes = 0;
+    off_t offset2 = offset;
 
     if (offset < MAX_RANGE_FCB_DIRECT_BLOCKS) {
         printf("\t write dbg: offset dentro de rango de Bloques Directos!!\n");
 
         writtenBytes += write_DirectBlocks(&file, offset, buff, &size);
         printf("\t write dbg: bloques escritos %d!!\n", writtenBytes);
+
         //file.lenght += writtenBytes;
     } else if (offset < MAX_RANGE_1LVL_INDIRECT_BLOCK) {
         printf("\t write dbg: offset dentro de rango de Bloque Indirecto!!\n");
@@ -1512,7 +1668,11 @@ static int ondisk_write(const char *path, const char *buff, size_t size,
         printf("\t write dbg: bloques escritos %d!!\n", writtenBytes);
         //file.lenght += writtenBytes;
     }
-    file.lenght += writtenBytes;
+    //file.lenght += writtenBytes;
+
+    if (offset2 > file.lenght)
+        file.lenght += offset - file.lenght;
+
     write_block(bloque_modificar, &file);
     write_block(0, &superBlock);
 
