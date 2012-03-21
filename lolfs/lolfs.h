@@ -21,7 +21,7 @@
 
 struct lolfs_path
 {
-    char path[16][44];//**path;
+    char path[16][MAX_NAME];//**path;
     int index;
 };
 
